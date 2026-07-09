@@ -38,9 +38,6 @@ Usage:
 
     # Force re-upload of everything, ignoring the checkpoint:
     python scripts/upload_raw_data.py --catalog vstone_traffic_dev --data-dir "..." --force
-
-    # Use a named profile from ~/.databrickscfg instead of the default auth:
-    python scripts/upload_raw_data.py --catalog vstone_traffic_dev --data-dir "..." --profile vstone
 """
 from __future__ import annotations
 
@@ -104,8 +101,19 @@ def upload_one(w, local_path: Path, remote_path: str) -> None:
     last_err = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            with open(local_path, "rb") as f:
-                w.files.upload(remote_path, f, overwrite=True, use_parallel=False)
+            # upload_from() takes a local PATH, not an open stream — each
+            # worker thread opens its own file handle from the path, so
+            # parallel multipart upload is actually safe here (unlike
+            # upload(), which hands every thread the SAME open file object
+            # and crashes large files with "Exception in thread ... producer").
+            # This should be meaningfully faster than the old single-threaded
+            # upload() fallback, especially for streets.csv (7+ GB).
+            w.files.upload_from(
+                file_path=remote_path,
+                source_path=str(local_path),
+                overwrite=True,
+                use_parallel=True,
+            )
             return
         except Exception as exc:  # noqa: BLE001 - want to retry on any transient error
             last_err = exc
@@ -119,7 +127,6 @@ def upload_one(w, local_path: Path, remote_path: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--catalog", required=True, help="e.g. vstone_traffic_dev")
-    parser.add_argument("--profile", help="Named profile in ~/.databrickscfg to authenticate with")
     parser.add_argument("--schema", default="raw")
     parser.add_argument("--volume", default="raw_volume")
     parser.add_argument("--data-dir", required=True, help="Local folder containing the 5 raw CSVs")
@@ -133,6 +140,16 @@ def main() -> int:
         "--force",
         action="store_true",
         help="Ignore the local checkpoint and re-upload every file regardless of prior success",
+    )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help=(
+            "Databricks CLI auth profile to use (see `databricks auth profiles`). "
+            "If omitted, falls back to DATABRICKS_CONFIG_PROFILE / DEFAULT — if you "
+            "have more than one profile configured, pass this explicitly so the "
+            "upload doesn't silently hit the wrong workspace."
+        ),
     )
     args = parser.parse_args()
 
@@ -151,7 +168,8 @@ def main() -> int:
         print(f"Missing local files, aborting: {missing}", file=sys.stderr)
         return 1
 
-    w = WorkspaceClient(profile=args.profile)  # picks up auth from `databricks auth login` / env vars / --profile
+    w = WorkspaceClient(profile=args.profile) if args.profile else WorkspaceClient()
+    print(f"Connected to: {w.config.host} (profile: {args.profile or 'DEFAULT / env vars'})")
     state = {} if args.force else load_state(state_path)
 
     results = {"skipped": [], "success": [], "failed": []}
