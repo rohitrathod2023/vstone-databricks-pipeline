@@ -1,0 +1,41 @@
+# Day 1 job. Deploy + run this immediately after writing it — don't wait until
+# later days to find out the yaml is wrong:
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#   databricks bundle run data_chunking_job -t dev
+#
+# No job_clusters / new_cluster / existing_cluster_id below is intentional —
+# omitting a cluster spec on a task runs it on serverless compute, which is
+# required on Free Edition (no managed clusters allowed). If your workspace
+# rejects this and insists on an explicit environment, add an `environments:`
+# block back in — see https://docs.databricks.com/aws/en/dev-tools/bundles/resources
+
+resources:
+  jobs:
+    data_chunking_job:
+      name: "Data Chunking"
+      tags:
+        project: vstone-traffic
+        layer: ingestion
+        day: "1"
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: env
+          default: ${bundle.target}
+
+      tasks:
+        - task_key: chunk_cars_csv
+          notebook_task:
+            notebook_path: ../../src/notebooks/01_data_chunking.py
+            base_parameters:
+              catalog: ${var.catalog}
+              env: ${bundle.target}
+
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+
+      max_concurrent_runs: 1

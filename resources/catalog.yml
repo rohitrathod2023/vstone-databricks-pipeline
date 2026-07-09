@@ -1,0 +1,37 @@
+# Unity Catalog objects declared as DABs resources — deployed the same way as
+# jobs (`databricks bundle deploy -t dev`), instead of hand-run SQL.
+#
+# Catalog creation is deliberately NOT included here. As of the current
+# Databricks docs, defining a `catalogs:` resource in a bundle only works
+# with the newer "direct" deployment engine (`bundle: engine: direct` in
+# databricks.yml), which is a bigger change than this project needs to take
+# on this close to the deadline. The catalog itself is a one-time, one-line
+# `CREATE CATALOG IF NOT EXISTS <name>;` — cheap enough to just run once by
+# hand per environment. Everything INSIDE the catalog (schemas, the volume)
+# is real DABs-managed infrastructure below, which is the part worth
+# demoing/explaining for the "confident about UC setup via DABs" story.
+
+resources:
+  schemas:
+    raw_schema:
+      name: raw
+      catalog_name: ${var.catalog}
+      comment: Raw landing schema — holds the Volume raw files land in.
+
+    bronze_schema:
+      name: bronze
+      catalog_name: ${var.catalog}
+      comment: Bronze layer — first Delta tables, one layer above raw files.
+
+    audit_schema:
+      name: audit
+      catalog_name: ${var.catalog}
+      comment: Pipeline run logs written by src/common/logger.py.
+
+  volumes:
+    raw_volume:
+      name: raw_volume
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.raw_schema.name}
+      volume_type: MANAGED
+      comment: Landing zone for the 5 raw source files, uploaded via scripts/upload_raw_data.py.

@@ -1,0 +1,62 @@
+  # VStone Traffic Simulator — Databricks Asset Bundle (DABs)
+  #
+  # This is the single source of truth for deploying every job in this project
+  # (Data Chunking today; Bronze/Silver/Gold jobs get added the same way on later days
+  # by dropping a new file into resources/jobs/ — nothing here needs to change).
+  #
+  # Workflow for EVERY change, every day (not just at the end):
+  #   databricks bundle validate -t dev
+  #   databricks bundle deploy   -t dev
+  #   databricks bundle run <job_key> -t dev
+  #
+  # Free Edition = one workspace, so dev/test/prod below do NOT map to separate
+  # workspaces. They map to separate Unity Catalog catalogs (via the `catalog`
+  # variable), which is the closest real separation Free Edition allows.
+
+  bundle:
+    name: vstone_pipeline
+
+  include:
+    - resources/jobs/*.yml
+    - resources/*.yml
+
+  variables:
+    catalog:
+      description: Unity Catalog catalog name for the active target
+      default: vstone_traffic_dev
+    notification_email:
+      description: Email for job failure notifications
+      default: rohitrathodcomp@gmail.com
+
+  # --------------------------------------------------------------------------
+  # Fill in `host` for your Free Edition workspace URL below (same URL in all
+  # three targets, since Free Edition is a single workspace — only the
+  # `catalog` variable actually changes between them).
+  # --------------------------------------------------------------------------
+  targets:
+    dev:
+      default: true
+      workspace:
+        host: https://dbc-fb8578aa-62d7.cloud.databricks.com/
+      variables:
+        catalog: vstone_traffic_dev
+
+    test:
+      mode: production
+      workspace:
+        host: https://dbc-fb8578aa-62d7.cloud.databricks.com/
+      variables:
+        catalog: vstone_traffic_test
+      run_as:
+        user_name: rohitrathodcomp@gmail.com
+
+    prod:
+      mode: production
+      workspace:
+        host: https://dbc-fb8578aa-62d7.cloud.databricks.com/
+      variables:
+        catalog: vstone_traffic_prod
+      run_as:
+        user_name: rohitrathodcomp@gmail.com
+
+

@@ -1,0 +1,46 @@
+name: Databricks CI/CD
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev]
+
+jobs:
+  test:
+    name: Lint + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r tests/requirements.txt
+
+      - name: Lint (flake8)
+        run: flake8 src tests --max-line-length=120
+
+      - name: Unit tests (pytest)
+        run: pytest tests/unit -v
+
+  # Deploy is intentionally commented out until Databricks workspace secrets
+  # (DATABRICKS_HOST / DATABRICKS_TOKEN) are added under Settings > Secrets.
+  # Uncomment once the Free Edition workspace + PAT are wired up (Day 1-2):
+  #
+  # deploy-dev:
+  #   name: Deploy bundle to dev
+  #   needs: test
+  #   if: github.ref == 'refs/heads/dev'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: databricks/setup-cli@main
+  #     - name: Deploy bundle
+  #       env:
+  #         DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  #         DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+  #       run: databricks bundle deploy -t dev
