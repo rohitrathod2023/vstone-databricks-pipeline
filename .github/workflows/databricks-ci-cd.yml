@@ -31,16 +31,16 @@ jobs:
   # (DATABRICKS_HOST / DATABRICKS_TOKEN) are added under Settings > Secrets.
   # Uncomment once the Free Edition workspace + PAT are wired up (Day 1-2):
   #
-  # deploy-dev:
-  #   name: Deploy bundle to dev
-  #   needs: test
-  #   if: github.ref == 'refs/heads/dev'
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: databricks/setup-cli@main
-  #     - name: Deploy bundle
-  #       env:
-  #         DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-  #         DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-  #       run: databricks bundle deploy -t dev
+  deploy-dev:
+    name: Deploy bundle to dev
+    needs: test
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+      - name: Deploy bundle
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle deploy -t dev

@@ -44,6 +44,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,6 +59,7 @@ RAW_FILES = [
 
 MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (2, 4, 8)
+HEARTBEAT_SECONDS = 30
 
 
 def human_size(num_bytes: int) -> str:
@@ -96,31 +98,73 @@ def already_uploaded(entry: dict | None, fingerprint: dict) -> bool:
     return entry.get("size") == fingerprint["size"] and entry.get("mtime") == fingerprint["mtime"]
 
 
-def upload_one(w, local_path: Path, remote_path: str) -> None:
+class _ProgressReader:
+    """Wraps a binary file object so we can report real bytes-read progress.
+
+    Safe to combine with use_parallel=True: the SDK's multipart upload only ever
+    reads the source stream from one internal thread (a "producer"), regardless of
+    how many other threads later upload the already-read chunks in parallel -- so
+    counting bytes here never races with the upload itself.
+    """
+
+    def __init__(self, fileobj, total_size: int):
+        self._f = fileobj
+        self.total = total_size
+        self.read_bytes = 0
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = self._f.read(size)
+        self.read_bytes += len(chunk)
+        return chunk
+
+    def seek(self, *args, **kwargs):
+        return self._f.seek(*args, **kwargs)
+
+    def tell(self) -> int:
+        return self._f.tell()
+
+    def seekable(self) -> bool:
+        return self._f.seekable()
+
+
+def _heartbeat(filename: str, progress: _ProgressReader, stop_event: threading.Event) -> None:
+    """Prints a real bytes-uploaded-so-far line every HEARTBEAT_SECONDS."""
+    while not stop_event.wait(HEARTBEAT_SECONDS):
+        pct = (progress.read_bytes / progress.total * 100) if progress.total else 0
+        print(f"  ...{filename}: {human_size(progress.read_bytes)} / {human_size(progress.total)} ({pct:.0f}%)")
+
+
+def upload_one(w, local_path: Path, remote_path: str, parallelism: int, part_size: int) -> None:
     """Raises on final failure after MAX_ATTEMPTS."""
     last_err = None
+    size = local_path.stat().st_size
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        try:
-            # upload_from() takes a local PATH, not an open stream — each
-            # worker thread opens its own file handle from the path, so
-            # parallel multipart upload is actually safe here (unlike
-            # upload(), which hands every thread the SAME open file object
-            # and crashes large files with "Exception in thread ... producer").
-            # This should be meaningfully faster than the old single-threaded
-            # upload() fallback, especially for streets.csv (7+ GB).
-            w.files.upload_from(
-                file_path=remote_path,
-                source_path=str(local_path),
-                overwrite=True,
-                use_parallel=True,
+        stop_event = threading.Event()
+        with open(local_path, "rb") as f:
+            progress = _ProgressReader(f, size)
+            heartbeat = threading.Thread(
+                target=_heartbeat, args=(local_path.name, progress, stop_event), daemon=True
             )
-            return
-        except Exception as exc:  # noqa: BLE001 - want to retry on any transient error
-            last_err = exc
-            if attempt < MAX_ATTEMPTS:
-                wait = BACKOFF_SECONDS[attempt - 1]
-                print(f"  attempt {attempt}/{MAX_ATTEMPTS} failed ({exc}); retrying in {wait}s")
-                time.sleep(wait)
+            heartbeat.start()
+            try:
+                w.files.upload(
+                    remote_path,
+                    progress,
+                    overwrite=True,
+                    use_parallel=True,
+                    parallelism=parallelism,
+                    part_size=part_size,
+                )
+                return
+            except Exception as exc:  # noqa: BLE001 - want to retry on any transient error
+                last_err = exc
+                if attempt < MAX_ATTEMPTS:
+                    wait = BACKOFF_SECONDS[attempt - 1]
+                    print(f"  attempt {attempt}/{MAX_ATTEMPTS} failed ({exc}); retrying in {wait}s")
+                    time.sleep(wait)
+            finally:
+                stop_event.set()
+                heartbeat.join()
     raise last_err  # type: ignore[misc]
 
 
@@ -150,6 +194,20 @@ def main() -> int:
             "have more than one profile configured, pass this explicitly so the "
             "upload doesn't silently hit the wrong workspace."
         ),
+    )
+    parser.add_argument(
+        "--parallelism",
+        type=int,
+        default=16,
+        help="Concurrent upload threads per file (SDK default is 10). More helps if you "
+        "aren't already saturating your uplink; past that it won't speed things up.",
+    )
+    parser.add_argument(
+        "--part-size-mb",
+        type=int,
+        default=64,
+        help="Multipart chunk size in MB (SDK default is 10). Larger parts mean fewer "
+        "requests, which helps most on high-latency connections.",
     )
     args = parser.parse_args()
 
@@ -188,7 +246,7 @@ def main() -> int:
         print(f"Uploading {filename} ({human_size(size)}) -> {remote_path}")
         start = time.time()
         try:
-            upload_one(w, local_path, remote_path)
+            upload_one(w, local_path, remote_path, args.parallelism, args.part_size_mb * 1024 * 1024)
         except Exception as exc:  # noqa: BLE001
             elapsed = time.time() - start
             print(f"  FAILED after {elapsed:.0f}s and {MAX_ATTEMPTS} attempts: {exc}", file=sys.stderr)
