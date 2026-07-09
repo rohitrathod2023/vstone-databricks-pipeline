@@ -81,10 +81,11 @@ class _DeltaAuditHandler(logging.Handler):
                 record.levelname,
                 self.format(record),
             )]
-            df = spark.createDataFrame(
-                row,
-                schema="event_ts timestamp, run_id string, job_name string, module string, level string, message string",
+            schema = (
+                "event_ts timestamp, run_id string, job_name string, "
+                "module string, level string, message string"
             )
+            df = spark.createDataFrame(row, schema=schema)
             (
                 df.write.format("delta")
                 .mode("append")

@@ -46,7 +46,8 @@ def run(spark, env: str = "dev") -> dict:
     """Runs the full chunking pipeline for the given environment. Returns a dict of
     {chunk_key: row_count} for logging/testing/verification."""
     _validate_split()
-    log = get_logger(__name__, catalog=get_source_config("chunk1_csv", env=env)["target_table"].split(".")[0], job_name="Data Chunking")
+    catalog = get_source_config("chunk1_csv", env=env)["target_table"].split(".")[0]
+    log = get_logger(__name__, catalog=catalog, job_name="Data Chunking")
 
     log.info("Reading raw_cars from Volumes")
     raw_cfg = get_source_config("raw_cars", env=env)
