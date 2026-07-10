@@ -140,8 +140,12 @@ will pass too.
   (Windows) or `py --version` and pick 3.10/3.11 explicitly when creating the
   venv below.
 - **A JDK (Java 17 recommended)** — PySpark needs one to launch its JVM.
-  If you don't have one: `winget install Microsoft.OpenJDK.17` (Windows), or
-  your OS package manager otherwise.
+  If `java -version` in your terminal already prints something 11+, you're
+  set. If not:
+  - Windows: `winget install Microsoft.OpenJDK.17`
+  - macOS: `brew install openjdk@17`
+  - Linux: `sudo apt install openjdk-17-jdk` (Debian/Ubuntu) or your distro's
+    equivalent
 
 **Setup:**
 
@@ -151,22 +155,42 @@ py -3.10 -m venv .venv          # or -3.11 — anything except 3.12/3.13
 pip install -r tests/requirements.txt
 ```
 
-**Every time you open a new shell to run tests**, set these (adjust the JDK
-path to wherever yours installed):
+That's it — no env vars to set by hand. `tests/conftest.py` runs automatically
+before any test and handles the two things that used to require manual
+per-shell setup:
+
+- **`PYSPARK_PYTHON`/`PYSPARK_DRIVER_PYTHON`**: pinned to whichever Python is
+  running pytest. Needed because Spark's worker subprocess otherwise calls a
+  bare `python` command, which on Windows hits the fake Microsoft Store alias
+  instead of your venv's real interpreter — causing `JAVA_GATEWAY_EXITED` /
+  socket-timeout failures that look unrelated to your code.
+- **`JAVA_HOME`**: left alone if you've already set it; otherwise auto-detected
+  from common per-OS JDK install locations (`C:\Program Files\Microsoft`,
+  `/usr/libexec/java_home` on macOS, `/usr/lib/jvm` on Linux). If no JDK is
+  found anywhere, tests fail immediately with one clear line telling you what
+  to install — not a multi-page traceback.
+
+If you don't have a JDK yet, install one (Java 17 recommended) before running
+tests:
+- Windows: `winget install Microsoft.OpenJDK.17`
+- macOS: `brew install openjdk@17`
+- Linux: `sudo apt install openjdk-17-jdk` (Debian/Ubuntu) or your distro's
+  equivalent
+
+If your JDK lives somewhere `conftest.py` doesn't know to look, just set
+`JAVA_HOME` yourself once (`setx JAVA_HOME "..."` on Windows, or add
+`export JAVA_HOME=...` to your shell profile) — the auto-detection only
+kicks in when it's unset.
+
+Retyping `$env:JAVA_HOME` every session gets old fast — to set it once,
+permanently, for your Windows user account instead:
 
 ```powershell
-$env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-17.0.19.10-hotspot"
-$env:PYSPARK_PYTHON = "$PWD\.venv\Scripts\python.exe"
-$env:PYSPARK_DRIVER_PYTHON = "$PWD\.venv\Scripts\python.exe"
+setx JAVA_HOME "C:\Program Files\Microsoft\jdk-17.<your-version>-hotspot"
 ```
 
-`PYSPARK_PYTHON`/`PYSPARK_DRIVER_PYTHON` matter most **on Windows**: without
-them, Spark's worker subprocess calls a bare `python` command, which Windows
-intercepts with its fake Microsoft Store alias instead of your venv's real
-interpreter, and tests that actually run Spark jobs (not just build a
-DataFrame schema) fail with `JAVA_GATEWAY_EXITED` or `Accept timed out`
-errors that have nothing to do with your code. macOS/Linux users can usually
-skip these two lines.
+(then open a **new** terminal for it to take effect). macOS/Linux: add the
+`export JAVA_HOME=...` line to `~/.zshrc` / `~/.bashrc`.
 
 **Run:**
 
