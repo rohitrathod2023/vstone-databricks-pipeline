@@ -127,14 +127,53 @@ the end.
 
 ## Local test loop (no Databricks needed)
 
+These run the exact same two commands CI runs
+(`.github/workflows/databricks-ci-cd.yml`), so a clean pass locally means CI
+will pass too.
+
+**Requirements before you start:**
+- **Python 3.10 or 3.11 — not 3.12/3.13.** `tests/requirements.txt` pins
+  `pandas<2.0.0` (needed for compatibility with PySpark 3.5.x's
+  `pyspark.pandas` module — newer pandas/numpy break its internals). Pandas
+  1.x has no prebuilt wheel for Python 3.12+, so installing there fails
+  trying to build pandas from source. Check what you have with `py -0`
+  (Windows) or `py --version` and pick 3.10/3.11 explicitly when creating the
+  venv below.
+- **A JDK (Java 17 recommended)** — PySpark needs one to launch its JVM.
+  If you don't have one: `winget install Microsoft.OpenJDK.17` (Windows), or
+  your OS package manager otherwise.
+
+**Setup:**
+
 ```bash
+py -3.10 -m venv .venv          # or -3.11 — anything except 3.12/3.13
+.venv\Scripts\activate           # Windows; use `source .venv/bin/activate` on macOS/Linux
 pip install -r tests/requirements.txt
+```
+
+**Every time you open a new shell to run tests**, set these (adjust the JDK
+path to wherever yours installed):
+
+```powershell
+$env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-17.0.19.10-hotspot"
+$env:PYSPARK_PYTHON = "$PWD\.venv\Scripts\python.exe"
+$env:PYSPARK_DRIVER_PYTHON = "$PWD\.venv\Scripts\python.exe"
+```
+
+`PYSPARK_PYTHON`/`PYSPARK_DRIVER_PYTHON` matter most **on Windows**: without
+them, Spark's worker subprocess calls a bare `python` command, which Windows
+intercepts with its fake Microsoft Store alias instead of your venv's real
+interpreter, and tests that actually run Spark jobs (not just build a
+DataFrame schema) fail with `JAVA_GATEWAY_EXITED` or `Accept timed out`
+errors that have nothing to do with your code. macOS/Linux users can usually
+skip these two lines.
+
+**Run:**
+
+```bash
 flake8 src tests --max-line-length=120
 pytest tests/unit -v
 ```
-
-CI runs the same two commands automatically on every PR into `dev` or `main`
-(`.github/workflows/databricks-ci-cd.yml`).
 
 ## Git workflow
 
