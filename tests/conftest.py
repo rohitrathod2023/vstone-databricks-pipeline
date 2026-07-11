@@ -24,8 +24,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-os.environ.setdefault("PYSPARK_PYTHON", sys.executable)
-os.environ.setdefault("PYSPARK_DRIVER_PYTHON", sys.executable)
+os.environ["PYSPARK_PYTHON"] = sys.executable
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
 _INSTALL_HINT = (
     "No JDK found and JAVA_HOME is not set. PySpark needs a JDK (Java 17 recommended) "
