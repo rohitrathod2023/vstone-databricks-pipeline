@@ -34,4 +34,4 @@ resources:
       catalog_name: ${var.catalog}
       schema_name: ${resources.schemas.raw_schema.name}
       volume_type: MANAGED
-      comment: Landing zone for the 5 raw source files, uploaded via scripts/upload_raw_data.py.
+      comment: Landing zone for the 5 raw source files, downloaded directly from Kaggle via src/notebooks/00_download_raw_data.py.

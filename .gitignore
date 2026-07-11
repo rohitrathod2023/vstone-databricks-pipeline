@@ -6,3 +6,7 @@ __pycache__/
 .DS_Store
 *.egg-info/
 scripts/.upload_state.*.json
+.venv/
+.venv-spark4-test/
+/data/
+.claude/

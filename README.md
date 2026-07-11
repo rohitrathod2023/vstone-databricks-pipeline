@@ -76,43 +76,33 @@ CREATE VOLUME  IF NOT EXISTS vstone_traffic_dev.raw.raw_volume;
 -- repeat for vstone_traffic_test / vstone_traffic_prod when you get there
 ```
 
-**Uploading the raw data — read this before you try the UI.** Catalog
-Explorer's drag-and-drop upload is capped at **5 GB per file**. That's a UI
-limit, not a Volume storage cap or a Free Edition data cap — Volumes
-themselves hold files up to your cloud storage provider's max size. It still
-means `streets.csv` (7.8 GB) can't go through the UI.
+**Getting the raw data into the Volume.** Don't download it to your laptop at
+all — `src/notebooks/00_download_raw_data.py` downloads all 5 files from
+Kaggle ([xxjcaxx/trafficsimulator](https://www.kaggle.com/datasets/xxjcaxx/trafficsimulator))
+**directly into the Volume**, running entirely on Databricks compute. No local
+disk involved, no 5GB Catalog Explorer UI upload limit (that cap is a
+drag-and-drop UI restriction, not a Volume storage limit — Volumes support
+local file API access from cluster/serverless compute, so a plain file write
+has no such cap).
 
-Use `scripts/upload_raw_data.py` for **all 5 files, in one run** — it streams
-straight from disk (never loads a whole file into memory) and works the same
-way regardless of file size:
-
+One-time setup — store your Kaggle token as a Databricks secret, never in a
+notebook or committed file:
 ```bash
-pip install databricks-sdk
-python scripts/upload_raw_data.py --catalog vstone_traffic_dev --data-dir "D:\v4c\Databricks\vstone\traffic_simulator\src\data"
+databricks secrets create-scope kaggle
+databricks secrets put-secret kaggle api_token   # paste your token from kaggle.com/settings/api when prompted
 ```
 
-This uploads `cars.csv`, `streets.csv`, `node_locations.csv`,
-`streets_list.csv`, and `telegram.csv` to
-`/Volumes/vstone_traffic_dev/raw/raw_volume/incoming/`.
+Then run the notebook (via your Git folder, or upload it manually) with the
+`files` widget set to just the small files first
+(`node_locations.csv,streets_list.csv`) to confirm serverless compute can
+reach Kaggle's API before trusting it with `streets.csv` (7.8GB). Once that
+works, widen the widget to the full file list and re-run — already-downloaded
+files are skipped unless `force` is set to `true`.
 
-**Checkpointing — safe to just re-run the exact same command if something
-fails.** The script writes a local `scripts/.upload_state.<catalog>.json`
-(gitignored) recording which files already succeeded. Re-running skips
-anything already uploaded and unchanged, and only retries whatever failed —
-so if `streets.csv` times out partway through, you don't sit through
-re-uploading the 4 small files again. Each file also gets 3 attempts with
-backoff (2s/4s/8s) within a single run before being marked failed. One real
-limit worth knowing: this does **not** resume a single file from the byte it
-died at — the Databricks SDK doesn't expose an offset/resume parameter, so a
-failed `streets.csv` restarts from 0 on retry, it just doesn't also drag the
-other 4 files down with it. Use `--force` to ignore the checkpoint and
-re-upload everything regardless of prior success; `--files streets.csv` to
-target just one file.
-
-(The `databricks fs cp` CLI command works too, and doesn't require installing
-the SDK — but it's only reliable for the 4 smaller files; Databricks' own
-docs note it can hit transient I/O errors on very large files over the
-FUSE-based copy path. Stick with the script unless you have a reason not to.)
+Kaggle serves larger files as `.zip` archives; the notebook detects and
+extracts these automatically so the Volume ends up with plain CSVs either
+way. Its underlying Kaggle client already streams in 1MB chunks with 5
+automatic retries and resume support — no extra code needed for large files.
 
 ## Every-day workflow (not just Day 1)
 
@@ -127,14 +117,72 @@ the end.
 
 ## Local test loop (no Databricks needed)
 
+These run the exact same two commands CI runs
+(`.github/workflows/databricks-ci-cd.yml`), so a clean pass locally means CI
+will pass too.
+
+**Requirements before you start:**
+- **Python 3.10+** (3.10 through 3.13 all verified working). `tests/requirements.txt`
+  pins `pyspark>=4.0,<5.0` and `pandas>=2.0,<3.0` — matching Databricks'
+  current runtime (DBR 18 ships Spark 4.1.0) and PySpark's own pandas-on-Spark
+  module, which still depends on a pandas internal (`pandas.core.common._builtin_table`)
+  that pandas 3.0 removed. That's the one real constraint: pandas must stay
+  below 3.0 regardless of Python version — everything else is flexible.
+- **A JDK (Java 17 recommended)** — PySpark needs one to launch its JVM.
+  If `java -version` in your terminal already prints something 11+, you're
+  set. If not, see the install commands below.
+
+**Setup:**
+
 ```bash
+py -3.12 -m venv .venv           # any Python 3.10+ works
+.venv\Scripts\activate           # Windows; use `source .venv/bin/activate` on macOS/Linux
 pip install -r tests/requirements.txt
+```
+
+That's it — no env vars to set by hand. `tests/conftest.py` runs automatically
+before any test and handles the two things that used to require manual
+per-shell setup:
+
+- **`PYSPARK_PYTHON`/`PYSPARK_DRIVER_PYTHON`**: pinned to whichever Python is
+  running pytest. Needed because Spark's worker subprocess otherwise calls a
+  bare `python` command, which on Windows hits the fake Microsoft Store alias
+  instead of your venv's real interpreter — causing `JAVA_GATEWAY_EXITED` /
+  socket-timeout failures that look unrelated to your code.
+- **`JAVA_HOME`**: left alone if you've already set it; otherwise auto-detected
+  from common per-OS JDK install locations (`C:\Program Files\Microsoft`,
+  `/usr/libexec/java_home` on macOS, `/usr/lib/jvm` on Linux). If no JDK is
+  found anywhere, tests fail immediately with one clear line telling you what
+  to install — not a multi-page traceback.
+
+If you don't have a JDK yet, install one (Java 17 recommended) before running
+tests:
+- Windows: `winget install Microsoft.OpenJDK.17`
+- macOS: `brew install openjdk@17`
+- Linux: `sudo apt install openjdk-17-jdk` (Debian/Ubuntu) or your distro's
+  equivalent
+
+If your JDK lives somewhere `conftest.py` doesn't know to look, just set
+`JAVA_HOME` yourself once (`setx JAVA_HOME "..."` on Windows, or add
+`export JAVA_HOME=...` to your shell profile) — the auto-detection only
+kicks in when it's unset.
+
+Retyping `$env:JAVA_HOME` every session gets old fast — to set it once,
+permanently, for your Windows user account instead:
+
+```powershell
+setx JAVA_HOME "C:\Program Files\Microsoft\jdk-17.<your-version>-hotspot"
+```
+
+(then open a **new** terminal for it to take effect). macOS/Linux: add the
+`export JAVA_HOME=...` line to `~/.zshrc` / `~/.bashrc`.
+
+**Run:**
+
+```bash
 flake8 src tests --max-line-length=120
 pytest tests/unit -v
 ```
-
-CI runs the same two commands automatically on every PR into `dev` or `main`
-(`.github/workflows/databricks-ci-cd.yml`).
 
 ## Git workflow
 
