@@ -1,0 +1,26 @@
+# DLT pipeline for chunk2_csv -> bronze.traffic_counts_dlt.
+#
+# `target` uses ${resources.schemas.bronze_schema.name} rather than a literal
+# "bronze" -- env.yml's bronze_schema field is only visible to Python code
+# via config_loader.py, not to DABs' own templating layer. DABs resolves
+# resource-name references to their FINAL name after mode: development's
+# auto-prefixing (confirmed working via `databricks pipelines get` in an
+# earlier attempt) -- a literal "bronze" here would silently write DLT's
+# tables into a schema that doesn't exist in dev.
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#   databricks bundle run bronze_autoloader_pyspark_dlt_job -t dev   # runs the pipeline via its pipeline_task
+
+resources:
+  pipelines:
+    bronze_dlt_pipeline:
+      name: "Bronze DLT Ingestion"
+      catalog: ${var.catalog}
+      target: ${resources.schemas.bronze_schema.name}
+      serverless: true
+      libraries:
+        - notebook:
+            path: ../../src/pipelines/bronze/dlt_traffic_counts.py
+      configuration:
+        env: ${bundle.target}

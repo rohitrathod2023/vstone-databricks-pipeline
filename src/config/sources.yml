@@ -47,6 +47,11 @@ chunk1_csv:
   split_pct: 40
   order: 1
   target_table: ${catalog}.${bronze_schema}.traffic_counts_copyinto
+  # chunking.py already ran add_audit_columns() before writing this file, so
+  # it already has load_dt/source_format/source_file/run_id from the Day 1
+  # extraction event -- Bronze's own load needs to strip and re-tag these
+  # with its own (COPY INTO's) load event, not collide with them.
+  has_audit_columns: true
   description: Earliest 40% of cars.csv by date — first-time bulk load (Day 2)
 
 chunk2_csv:
@@ -56,6 +61,7 @@ chunk2_csv:
   split_pct: 30
   order: 2
   target_table: ${catalog}.${bronze_schema}.traffic_counts_dlt
+  has_audit_columns: true
   description: Next 30% by date — incremental load via DLT (Day 3)
 
 chunk3_json:
@@ -65,6 +71,7 @@ chunk3_json:
   split_pct: 20
   order: 3
   target_table: ${catalog}.${bronze_schema}.traffic_counts_autoloader
+  has_audit_columns: true
   description: Next 20% by date, converted to JSON — Auto Loader (Day 3)
 
 chunk4_xml:
@@ -74,6 +81,7 @@ chunk4_xml:
   split_pct: 10
   order: 4
   target_table: ${catalog}.${bronze_schema}.traffic_counts_pyspark
+  has_audit_columns: true
   description: Latest 10% by date, converted to XML — PySpark read/write (Day 3)
 
 # ---------------------------------------------------------------------------

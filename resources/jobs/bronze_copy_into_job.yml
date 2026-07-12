@@ -1,0 +1,71 @@
+# Day 2 job — 5 independent tasks, same shared notebook
+# (src/notebooks/02_bronze_copy_into.py), each with a different source_key.
+# No cluster spec = serverless (Free Edition requirement), same pattern as
+# data_chunking_job.yml. Tasks have no depends_on since the 5 sources are
+# fully independent -- they run in parallel.
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#   databricks bundle run bronze_copy_into_job -t dev
+
+resources:
+  jobs:
+    bronze_copy_into_job:
+      name: "Bronze COPY INTO"
+      tags:
+        project: vstone-traffic
+        layer: bronze
+        day: "2"
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: env
+          default: ${bundle.target}
+
+      tasks:
+        - task_key: copy_into_chunk1_csv
+          notebook_task:
+            notebook_path: ../../src/notebooks/02_bronze_copy_into.py
+            base_parameters:
+              source_key: chunk1_csv
+              catalog: ${var.catalog}
+              env: ${bundle.target}
+
+        - task_key: copy_into_streets
+          notebook_task:
+            notebook_path: ../../src/notebooks/02_bronze_copy_into.py
+            base_parameters:
+              source_key: bronze_streets
+              catalog: ${var.catalog}
+              env: ${bundle.target}
+
+        - task_key: copy_into_node_locations
+          notebook_task:
+            notebook_path: ../../src/notebooks/02_bronze_copy_into.py
+            base_parameters:
+              source_key: bronze_node_locations
+              catalog: ${var.catalog}
+              env: ${bundle.target}
+
+        - task_key: copy_into_streets_list
+          notebook_task:
+            notebook_path: ../../src/notebooks/02_bronze_copy_into.py
+            base_parameters:
+              source_key: bronze_streets_list
+              catalog: ${var.catalog}
+              env: ${bundle.target}
+
+        - task_key: copy_into_telegram
+          notebook_task:
+            notebook_path: ../../src/notebooks/02_bronze_copy_into.py
+            base_parameters:
+              source_key: bronze_telegram
+              catalog: ${var.catalog}
+              env: ${bundle.target}
+
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+
+      max_concurrent_runs: 1
