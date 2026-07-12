@@ -46,22 +46,41 @@ def get_env_config(env: str | None = None) -> Dict[str, Any]:
     return envs[resolved]
 
 
-def _substitute(value: Any, catalog: str) -> Any:
+def _substitute(value: Any, replacements: Dict[str, str]) -> Any:
+    """Replaces every ${key} in value with replacements[key]. Every string field in
+    env.yml's active block is a usable placeholder -- e.g. raw_schema: ... there
+    makes ${raw_schema} substitutable in sources.yml, with no code change needed
+    when a new per-environment field is added."""
     if isinstance(value, str):
-        return value.replace("${catalog}", catalog)
+        for placeholder, replacement in replacements.items():
+            value = value.replace(f"${{{placeholder}}}", replacement)
+        return value
     if isinstance(value, dict):
-        return {k: _substitute(v, catalog) for k, v in value.items()}
+        return {k: _substitute(v, replacements) for k, v in value.items()}
     if isinstance(value, list):
-        return [_substitute(v, catalog) for v in value]
+        return [_substitute(v, replacements) for v in value]
     return value
 
 
 def get_source_config(key: str, env: str | None = None) -> Dict[str, Any]:
+    """Some entries (e.g. bronze_streets) don't define their own path/format --
+    they set source_key: raw_streets to reuse another entry's path/format/
+    description, only overriding technique/target_table. Resolve that
+    indirection here so every caller gets a single flat, complete config."""
     sources = _load_yaml(_SOURCES_FILE)
     if key not in sources:
         raise KeyError(f"No sources.yml entry for '{key}'. Known keys: {sorted(sources)}")
+
+    cfg = dict(sources[key])
+    referenced_key = cfg.get("source_key")
+    if referenced_key:
+        if referenced_key not in sources:
+            raise KeyError(f"'{key}' references unknown source_key '{referenced_key}'")
+        cfg = {**sources[referenced_key], **cfg}
+
     env_cfg = get_env_config(env)
-    return _substitute(sources[key], env_cfg["catalog"])
+    replacements = {k: v for k, v in env_cfg.items() if isinstance(v, str)}
+    return _substitute(cfg, replacements)
 
 
 def get_all_source_keys() -> list[str]:

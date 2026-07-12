@@ -42,7 +42,7 @@ if SRC_DIR not in sys.path:
 # COMMAND ----------
 
 dbutils.widgets.text("catalog", "vstone_traffic_dev", "Catalog")
-dbutils.widgets.text("schema", "raw", "Schema")
+dbutils.widgets.text("schema", "dev_rohitrathodcomp_raw", "Schema")
 dbutils.widgets.text("volume", "raw_volume", "Volume")
 dbutils.widgets.text("dataset", "xxjcaxx/trafficsimulator", "Kaggle dataset ref")
 dbutils.widgets.text(

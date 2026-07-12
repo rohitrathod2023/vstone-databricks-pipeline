@@ -13,19 +13,18 @@
 # workspaces. They map to separate Unity Catalog catalogs (via the `catalog`
 # variable), which is the closest real separation Free Edition allows.
 #
-# All three targets use mode: production deliberately, even dev. DABs'
-# mode: development is for an individual's personal scratch sandbox (it
-# auto-prefixes resource names and auto-pauses job schedules so many
-# engineers can share one workspace without colliding) -- it is not a
-# synonym for "the dev environment". Since dev/test/prod here are
-# environment-promotion stages, not personal sandboxes, all three get the
-# same explicit, predictable mode: production behavior.
+# dev uses mode: development -- schema/job names get auto-prefixed
+# (dev_<user>_raw, dev_<user>_bronze, etc., and "[dev <user>] Data Chunking")
+# and job triggers auto-pause. test/prod stay mode: production: explicit,
+# unprefixed names, no auto-pause, since those are real environment-promotion
+# stages, not personal scratch space.
 
 bundle:
   name: vstone_pipeline
 
 include:
   - resources/jobs/*.yml
+  - resources/pipelines/*.yml
   - resources/*.yml
 
 variables:
@@ -48,7 +47,7 @@ variables:
 # --------------------------------------------------------------------------
 targets:
   dev:
-    mode: production
+    mode: development
     default: true
     workspace:
       host: https://dbc-fb8578aa-62d7.cloud.databricks.com/

@@ -4,34 +4,36 @@
 # generic_ingest("<key>") and everything below drives the behavior. Adding a
 # new source (or fixing a path) is a config edit, not a code change.
 #
-# ${catalog} is substituted by config_loader.py using the active bundle
-# target's `catalog` variable (vstone_traffic_dev / _test / _prod).
+# ${catalog}/${raw_schema}/${bronze_schema} are substituted by
+# config_loader.py from the active bundle target's env.yml block. The schema
+# placeholders exist (rather than a hardcoded "raw"/"bronze") because
+# mode: development auto-prefixes schema names per-target -- see env.yml.
 
 # ---------------------------------------------------------------------------
 # Day 1 — raw landing (uploaded once, read by the chunking job)
 # ---------------------------------------------------------------------------
 raw_cars:
-  path: /Volumes/${catalog}/raw/raw_volume/incoming/cars.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/cars.csv
   format: csv
   description: Full cars.csv as downloaded from Kaggle, before chunking
 
 raw_streets:
-  path: /Volumes/${catalog}/raw/raw_volume/incoming/streets.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/streets.csv
   format: csv
   description: Full streets.csv (7.8GB) — never chunked, ingested directly, held for Day 7 benchmark
 
 raw_node_locations:
-  path: /Volumes/${catalog}/raw/raw_volume/incoming/node_locations.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/node_locations.csv
   format: csv
   description: 14 rows, includes bad coords at location=7 (quarantined in Silver)
 
 raw_streets_list:
-  path: /Volumes/${catalog}/raw/raw_volume/incoming/streets_list.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/streets_list.csv
   format: csv
   description: 36 rows, street metadata incl. dangerous score (versioned SCD2 in Gold)
 
 raw_telegram:
-  path: /Volumes/${catalog}/raw/raw_volume/incoming/telegram.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/telegram.csv
   format: csv
   description: Free-text citizen reports, no key relationship to other tables
 
@@ -39,39 +41,47 @@ raw_telegram:
 # Day 1 output / Day 2-3 Bronze input — the 4 chronological chunks of cars.csv
 # ---------------------------------------------------------------------------
 chunk1_csv:
-  path: /Volumes/${catalog}/raw/raw_volume/chunks/chunk1.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/chunks/chunk1.csv
   format: csv
   technique: copy_into
   split_pct: 40
   order: 1
-  target_table: ${catalog}.bronze.traffic_counts
+  target_table: ${catalog}.${bronze_schema}.traffic_counts_copyinto
+  # chunking.py already ran add_audit_columns() before writing this file, so
+  # it already has load_dt/source_format/source_file/run_id from the Day 1
+  # extraction event -- Bronze's own load needs to strip and re-tag these
+  # with its own (COPY INTO's) load event, not collide with them.
+  has_audit_columns: true
   description: Earliest 40% of cars.csv by date — first-time bulk load (Day 2)
 
 chunk2_csv:
-  path: /Volumes/${catalog}/raw/raw_volume/chunks/chunk2.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/chunks/chunk2.csv
   format: csv
   technique: delta_live_tables
   split_pct: 30
   order: 2
-  target_table: ${catalog}.bronze.traffic_counts
+  target_table: ${catalog}.${bronze_schema}.traffic_counts_dlt
+  has_audit_columns: true
   description: Next 30% by date — incremental load via DLT (Day 3)
 
 chunk3_json:
-  path: /Volumes/${catalog}/raw/raw_volume/chunks/chunk3.json
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/chunks/chunk3.json
   format: json
   technique: autoloader
   split_pct: 20
   order: 3
-  target_table: ${catalog}.bronze.traffic_counts
+  target_table: ${catalog}.${bronze_schema}.traffic_counts_autoloader
+  has_audit_columns: true
   description: Next 20% by date, converted to JSON — Auto Loader (Day 3)
 
 chunk4_xml:
-  path: /Volumes/${catalog}/raw/raw_volume/chunks/chunk4.xml
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/chunks/chunk4.xml
   format: xml
   technique: pyspark_read_write
   split_pct: 10
   order: 4
-  target_table: ${catalog}.bronze.traffic_counts
+  target_table: ${catalog}.${bronze_schema}.traffic_counts_pyspark
+  has_audit_columns: true
   description: Latest 10% by date, converted to XML — PySpark read/write (Day 3)
 
 # ---------------------------------------------------------------------------
@@ -80,19 +90,19 @@ chunk4_xml:
 bronze_streets:
   source_key: raw_streets
   technique: copy_into
-  target_table: ${catalog}.bronze.street_conditions
+  target_table: ${catalog}.${bronze_schema}.street_conditions
 
 bronze_node_locations:
   source_key: raw_node_locations
   technique: copy_into
-  target_table: ${catalog}.bronze.node_locations
+  target_table: ${catalog}.${bronze_schema}.node_locations
 
 bronze_streets_list:
   source_key: raw_streets_list
   technique: copy_into
-  target_table: ${catalog}.bronze.streets_list
+  target_table: ${catalog}.${bronze_schema}.streets_list
 
 bronze_telegram:
   source_key: raw_telegram
   technique: copy_into
-  target_table: ${catalog}.bronze.telegram
+  target_table: ${catalog}.${bronze_schema}.telegram
