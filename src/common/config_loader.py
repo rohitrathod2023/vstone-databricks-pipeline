@@ -63,12 +63,24 @@ def _substitute(value: Any, replacements: Dict[str, str]) -> Any:
 
 
 def get_source_config(key: str, env: str | None = None) -> Dict[str, Any]:
+    """Some entries (e.g. bronze_streets) don't define their own path/format --
+    they set source_key: raw_streets to reuse another entry's path/format/
+    description, only overriding technique/target_table. Resolve that
+    indirection here so every caller gets a single flat, complete config."""
     sources = _load_yaml(_SOURCES_FILE)
     if key not in sources:
         raise KeyError(f"No sources.yml entry for '{key}'. Known keys: {sorted(sources)}")
+
+    cfg = dict(sources[key])
+    referenced_key = cfg.get("source_key")
+    if referenced_key:
+        if referenced_key not in sources:
+            raise KeyError(f"'{key}' references unknown source_key '{referenced_key}'")
+        cfg = {**sources[referenced_key], **cfg}
+
     env_cfg = get_env_config(env)
     replacements = {k: v for k, v in env_cfg.items() if isinstance(v, str)}
-    return _substitute(sources[key], replacements)
+    return _substitute(cfg, replacements)
 
 
 def get_all_source_keys() -> list[str]:
