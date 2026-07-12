@@ -1,0 +1,51 @@
+# One job, three tasks -- one per remaining Bronze ingestion technique:
+# Auto Loader (chunk3_json), PySpark read/write (chunk4_xml), and a
+# pipeline_task triggering the DLT pipeline (chunk2_csv). Follows
+# data_chunking_job.yml/bronze_copy_into_job.yml's pattern: no cluster spec
+# (serverless by default), email notification wired to
+# ${var.notification_email}.
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#   databricks bundle run bronze_autoloader_pyspark_dlt_job -t dev
+
+resources:
+  jobs:
+    bronze_autoloader_pyspark_dlt_job:
+      name: "Bronze Auto Loader / PySpark / DLT Ingestion"
+      tags:
+        project: vstone-traffic
+        layer: bronze
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: env
+          default: ${bundle.target}
+
+      tasks:
+        - task_key: autoloader_chunk3_json
+          notebook_task:
+            notebook_path: ../../src/notebooks/03_bronze_autoloader.py
+            base_parameters:
+              source_key: chunk3_json
+              catalog: ${var.catalog}
+              env: ${bundle.target}
+
+        - task_key: pyspark_chunk4_xml
+          notebook_task:
+            notebook_path: ../../src/notebooks/04_bronze_pyspark_xml.py
+            base_parameters:
+              source_key: chunk4_xml
+              catalog: ${var.catalog}
+              env: ${bundle.target}
+
+        - task_key: dlt_chunk2_csv
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.bronze_dlt_pipeline.id}
+
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+
+      max_concurrent_runs: 1
