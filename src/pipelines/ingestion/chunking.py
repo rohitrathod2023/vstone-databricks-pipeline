@@ -31,7 +31,7 @@ from __future__ import annotations
 import os
 
 from common.audit import add_audit_columns
-from common.config_loader import get_source_config
+from common.config_loader import get_source_config, get_source_schema
 from common.io_readers import read_source, write_source
 from common.logger import current_run_id, get_logger
 
@@ -89,7 +89,9 @@ def run(spark, env: str = "dev", force: bool = False) -> dict:
     if not force and chunking_already_complete(env):
         log.info("Chunks already present and complete — skipping (pass force=True to redo)")
         results = {
-            chunk_key: read_source(spark, get_source_config(chunk_key, env=env)).count()
+            chunk_key: read_source(
+                spark, get_source_config(chunk_key, env=env), schema=get_source_schema(chunk_key)
+            ).count()
             for _, chunk_key in CHUNK_PLAN
         }
         log.info(f"Existing chunk row counts: {results}")
@@ -97,7 +99,7 @@ def run(spark, env: str = "dev", force: bool = False) -> dict:
 
     log.info("Reading raw_cars from Volumes")
     raw_cfg = get_source_config("raw_cars", env=env)
-    cars_df = read_source(spark, raw_cfg)
+    cars_df = read_source(spark, raw_cfg, schema=get_source_schema("raw_cars"))
 
     total_rows = cars_df.count()
     log.info(f"raw_cars loaded: {total_rows} rows")
@@ -105,6 +107,11 @@ def run(spark, env: str = "dev", force: bool = False) -> dict:
     from pyspark.sql import Window
     from pyspark.sql import functions as F
 
+    # date is now StringType (Bronze reads are explicitly all-string, see
+    # config/schemas.py) rather than inferred TimestampType -- this still
+    # sorts correctly because the source's ISO8601 format
+    # ("2023-06-02T12:36:03.093Z") is lexicographically sortable, not
+    # because of any special handling here.
     ordered = cars_df.orderBy(F.col("date").asc())
     windowed = ordered.withColumn("_row_num", F.row_number().over(Window.orderBy(F.col("date").asc())))
 

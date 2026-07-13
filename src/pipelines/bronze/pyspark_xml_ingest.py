@@ -22,7 +22,7 @@ import re
 from typing import Any, Dict
 
 from common.audit import add_audit_columns
-from common.config_loader import get_source_config
+from common.config_loader import get_source_config, get_source_schema
 from common.io_readers import read_xml
 
 _INVALID_COLUMN_CHARS = re.compile(r"[^0-9a-zA-Z_]")
@@ -39,7 +39,7 @@ def run_pyspark_xml(spark, source_key: str, env: str = "dev") -> Dict[str, Any]:
     cfg = get_source_config(source_key, env=env)
     source_file = cfg["path"].rsplit("/", 1)[-1]
 
-    df = read_xml(spark, cfg["path"], rowTag="record")
+    df = read_xml(spark, cfg["path"], schema=get_source_schema(source_key), rowTag="record")
     for original in df.columns:
         sanitized = sanitize_column_name(original)
         if sanitized != original:

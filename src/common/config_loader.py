@@ -83,5 +83,24 @@ def get_source_config(key: str, env: str | None = None) -> Dict[str, Any]:
     return _substitute(cfg, replacements)
 
 
+def get_source_schema(source_key: str):
+    """Returns the explicit, string-typed StructType for source_key (see
+    config/schemas.py). Resolves the same source_key indirection as
+    get_source_config() -- e.g. bronze_streets has no schema of its own, it
+    reuses raw_streets' via the same source_key: raw_streets pointer."""
+    from config.schemas import SCHEMAS
+
+    sources = _load_yaml(_SOURCES_FILE)
+    if source_key not in sources:
+        raise KeyError(f"No sources.yml entry for '{source_key}'. Known keys: {sorted(sources)}")
+
+    lookup_key = sources[source_key].get("source_key", source_key)
+    if lookup_key not in SCHEMAS:
+        raise KeyError(
+            f"No schema defined for '{lookup_key}' (resolved from '{source_key}'). Known: {sorted(SCHEMAS)}"
+        )
+    return SCHEMAS[lookup_key]
+
+
 def get_all_source_keys() -> list[str]:
     return sorted(_load_yaml(_SOURCES_FILE).keys())

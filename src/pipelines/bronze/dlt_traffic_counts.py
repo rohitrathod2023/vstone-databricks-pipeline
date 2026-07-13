@@ -28,7 +28,7 @@ if SRC_DIR not in sys.path:
 import dlt  # noqa: E402
 
 from common.audit import add_audit_columns  # noqa: E402
-from common.config_loader import get_source_config  # noqa: E402
+from common.config_loader import get_source_config, get_source_schema  # noqa: E402
 
 _ENV = spark.conf.get("env", "dev")
 _CFG = get_source_config("chunk2_csv", env=_ENV)
@@ -44,7 +44,9 @@ _SOURCE_FILE = _CFG["path"].rsplit("/", 1)[-1]
 @dlt.expect("non_null_enter_exit", "enter IS NOT NULL AND exit IS NOT NULL")
 @dlt.expect("non_null_date", "date IS NOT NULL")
 def traffic_counts_dlt():
-    df = spark.read.option("header", "true").option("inferSchema", "true").csv(_CFG["path"])
+    # Explicit, permissive (string-typed) schema -- see config/schemas.py.
+    # Strict typing/validation is deferred to Silver, not done at Bronze.
+    df = spark.read.option("header", "true").schema(get_source_schema("chunk2_csv")).csv(_CFG["path"])
     # chunk2_csv already carries its own audit columns from chunking.py --
     # withColumn() overwrites same-named columns (see autoloader_ingest.py's
     # note), so this safely re-tags with Bronze's own load event.

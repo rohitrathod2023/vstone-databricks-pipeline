@@ -34,3 +34,13 @@ def test_sanitize_leaves_already_valid_names_untouched():
 
 def test_sanitize_handles_multiple_consecutive_invalid_chars():
     assert sanitize_column_name("a--b::c") == "a__b__c"
+
+
+def test_run_pyspark_xml_would_apply_the_explicit_cars_schema():
+    """spark-xml isn't available in a plain local PySpark session, so this
+    can't exercise a real XML read -- confirms the schema run_pyspark_xml()
+    passes to read_xml(schema=...) is the correct one instead."""
+    from common.config_loader import get_source_schema
+    from config.schemas import CARS_SCHEMA
+
+    assert get_source_schema("chunk4_xml") is CARS_SCHEMA

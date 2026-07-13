@@ -19,24 +19,36 @@ if str(SRC_DIR) not in sys.path:
 from pipelines.bronze.copy_into import build_copy_into_sql, build_create_table_sql  # noqa: E402
 
 
-def test_create_table_sql_is_a_zero_row_ctas_with_matching_schema():
-    """COPY INTO requires its target table to exist first (confirmed against a
-    real warehouse: DELTA_MISSING_DELTA_TABLE_COPY_INTO otherwise). The CTAS
-    must produce zero rows and the exact same audit columns COPY INTO inserts,
-    so there's no schema drift between the two statements."""
-    cfg = {
-        "target_table": "cat.schema.table",
-        "path": "/Volumes/cat/raw/raw_volume/incoming/node_locations.csv",
-        "format": "csv",
-    }
-    sql = build_create_table_sql(cfg)
+def test_create_table_sql_declares_every_source_column_as_string():
+    """Bronze's target table shape must be explicit, not inferred from a
+    zero-row CTAS over read_files(...) -- every source column is declared
+    STRING (deliberately permissive per Databricks' own medallion guidance;
+    strict typing is Silver's job). Audit columns keep their own real types."""
+    cfg = {"target_table": "cat.schema.table"}
+    sql = build_create_table_sql(cfg, source_key="raw_node_locations")
 
-    assert "CREATE TABLE IF NOT EXISTS cat.schema.table" in sql
-    assert "WHERE 1 = 0" in sql
-    assert "current_timestamp() AS load_dt" in sql
-    assert "'csv' AS source_format" in sql
-    assert "'node_locations.csv' AS source_file" in sql
-    assert "AS run_id" in sql
+    assert "CREATE TABLE IF NOT EXISTS cat.schema.table (" in sql
+    assert "latitude STRING" in sql
+    assert "longitude STRING" in sql
+    assert "location STRING" in sql
+    assert "load_dt TIMESTAMP" in sql
+    assert "source_format STRING" in sql
+    assert "source_file STRING" in sql
+    assert "run_id STRING" in sql
+    assert "USING DELTA" in sql
+    assert "inferSchema" not in sql
+    assert "read_files" not in sql
+
+
+def test_create_table_sql_uses_cars_schema_for_every_chunk():
+    """chunk1_csv..chunk4_xml all share cars.csv's 5 columns regardless of
+    on-disk format (CSV/JSON/XML) -- same source, different technique."""
+    cfg = {"target_table": "cat.bronze.traffic_counts"}
+
+    for chunk_key in ("chunk1_csv", "chunk2_csv", "chunk3_json", "chunk4_xml"):
+        sql = build_create_table_sql(cfg, source_key=chunk_key)
+        for column in ("enter", "exit", "date", "id", "location"):
+            assert f"{column} STRING" in sql, f"{chunk_key} missing column {column}"
 
 
 def test_copy_into_sql_targets_the_configured_table():
@@ -50,6 +62,7 @@ def test_copy_into_sql_targets_the_configured_table():
     assert "COPY INTO vstone_traffic_dev.dev_rohitrathodcomp_bronze.traffic_counts_copyinto" in sql
     assert "FROM '/Volumes/vstone_traffic_dev/dev_rohitrathodcomp_raw/raw_volume/chunks/chunk1.csv'" in sql
     assert "FILEFORMAT = CSV" in sql
+    assert "inferSchema" not in sql
 
 
 def test_copy_into_sql_tags_every_row_with_audit_columns():
@@ -118,10 +131,12 @@ def test_chunk_sources_strip_and_retag_existing_audit_columns():
         "format": "csv",
         "has_audit_columns": True,
     }
-    create_sql = build_create_table_sql(cfg)
     copy_sql = build_copy_into_sql(cfg, run_id="run-1")
 
-    assert "* EXCEPT (load_dt, source_format, source_file, run_id)" in create_sql
+    # The EXCEPT applies to the actual COPY INTO SELECT (reading the file,
+    # which already carries audit columns from chunking.py) -- it has no
+    # bearing on build_create_table_sql, which only ever declares the target
+    # table's own column list once, from the schema, regardless of this flag.
     assert "* EXCEPT (load_dt, source_format, source_file, run_id)" in copy_sql
     # still re-tags with fresh Bronze-load values afterward
     assert "current_timestamp() AS load_dt" in copy_sql

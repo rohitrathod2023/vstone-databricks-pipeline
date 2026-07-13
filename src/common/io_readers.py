@@ -18,30 +18,30 @@ from __future__ import annotations
 from typing import Any, Callable, Dict
 
 
-def read_csv(spark, path: str, **options):
-    return (
-        spark.read.format("csv")
-        .option("header", "true")
-        .option("inferSchema", "true")
-        .options(**options)
-        .load(path)
-    )
+def read_csv(spark, path: str, schema=None, **options):
+    """schema=None falls back to inferSchema (only used where no explicit
+    schema is defined yet, e.g. ad hoc/exploratory reads) -- every Bronze/Day 1
+    source has an explicit schema in config/schemas.py and always passes one."""
+    reader = spark.read.format("csv").option("header", "true")
+    reader = reader.schema(schema) if schema is not None else reader.option("inferSchema", "true")
+    return reader.options(**options).load(path)
 
 
-def read_json(spark, path: str, **options):
-    return spark.read.format("json").options(**options).load(path)
+def read_json(spark, path: str, schema=None, **options):
+    reader = spark.read.format("json")
+    if schema is not None:
+        reader = reader.schema(schema)
+    return reader.options(**options).load(path)
 
 
-def read_xml(spark, path: str, **options):
+def read_xml(spark, path: str, schema=None, **options):
     # Requires the spark-xml package (com.databricks:spark-xml_2.12) on the cluster/
     # serverless environment. rowTag matches the row-per-record shape written by
     # chunking.py — keep this in sync with write_xml()'s row_tag.
-    return (
-        spark.read.format("xml")
-        .option("rowTag", options.pop("rowTag", "record"))
-        .options(**options)
-        .load(path)
-    )
+    reader = spark.read.format("xml").option("rowTag", options.pop("rowTag", "record"))
+    if schema is not None:
+        reader = reader.schema(schema)
+    return reader.options(**options).load(path)
 
 
 def write_csv(df, path: str, mode: str = "overwrite", **options):
@@ -75,11 +75,11 @@ WRITERS: Dict[str, Callable[..., Any]] = {
 }
 
 
-def read_source(spark, source_config: dict, **options):
+def read_source(spark, source_config: dict, schema=None, **options):
     fmt = source_config["format"]
     if fmt not in READERS:
         raise ValueError(f"No reader registered for format '{fmt}'. Known: {sorted(READERS)}")
-    return READERS[fmt](spark, source_config["path"], **options)
+    return READERS[fmt](spark, source_config["path"], schema=schema, **options)
 
 
 def write_source(df, source_config: dict, mode: str = "overwrite", **options):
