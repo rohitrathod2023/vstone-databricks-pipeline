@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System 2 Sync — Day 2 &amp; Day 3 Runbook</title>
+<style>
+  :root{
+    --bg:#f5f6f7; --surface:#ffffff; --ink:#1c2126; --muted:#6b7280; --line:#e2e5e8;
+    --accent:#b5551f; --accent-ink:#ffffff; --screenshot:#2f6690; --screenshot-bg:#eaf2f7;
+    --success:#2f6b40; --success-bg:#eaf4ec; --code-bg:#f0f1f3; --code-ink:#3a3f45;
+    --day2:#b5551f; --day3:#5c6f8a;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#181b1f; --surface:#20242a; --ink:#edeff1; --muted:#9aa3ac; --line:#2c3138;
+      --accent:#e08a52; --accent-ink:#20140b; --screenshot:#7db3d6; --screenshot-bg:#1c2a33;
+      --success:#7fcf93; --success-bg:#16261a; --code-bg:#171a1e; --code-ink:#d7dbe0;
+      --day2:#e08a52; --day3:#93a6c6;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#181b1f; --surface:#20242a; --ink:#edeff1; --muted:#9aa3ac; --line:#2c3138;
+    --accent:#e08a52; --accent-ink:#20140b; --screenshot:#7db3d6; --screenshot-bg:#1c2a33;
+    --success:#7fcf93; --success-bg:#16261a; --code-bg:#171a1e; --code-ink:#d7dbe0;
+    --day2:#e08a52; --day3:#93a6c6;
+  }
+  :root[data-theme="light"]{
+    --bg:#f5f6f7; --surface:#ffffff; --ink:#1c2126; --muted:#6b7280; --line:#e2e5e8;
+    --accent:#b5551f; --accent-ink:#ffffff; --screenshot:#2f6690; --screenshot-bg:#eaf2f7;
+    --success:#2f6b40; --success-bg:#eaf4ec; --code-bg:#f0f1f3; --code-ink:#3a3f45;
+    --day2:#b5551f; --day3:#5c6f8a;
+  }
+
+  * { box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  code, pre, .mono, .path, kbd{
+    font-family:"Cascadia Code","Cascadia Mono",ui-monospace,"Segoe UI Mono",Consolas,"Courier New",monospace;
+  }
+  .wrap{ max-width:760px; margin:0 auto; padding:0 20px 120px; }
+
+  header.top{ padding:56px 0 28px; border-bottom:1px solid var(--line); }
+  header.top .eyebrow{
+    font-size:12.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 10px;
+  }
+  header.top h1{
+    font-size:clamp(28px,4vw,38px); font-weight:700; margin:0 0 12px; letter-spacing:-.01em;
+    text-wrap:balance;
+  }
+  header.top p{ margin:0; color:var(--muted); max-width:60ch; font-size:15.5px; }
+
+  nav.jump{
+    position:sticky; top:0; z-index:20; background:var(--bg);
+    border-bottom:1px solid var(--line); padding:10px 0;
+    display:flex; gap:8px; margin-bottom:8px;
+  }
+  nav.jump a{
+    flex:1; text-align:center; padding:9px 10px; border-radius:8px; font-size:13.5px;
+    font-weight:600; text-decoration:none; border:1px solid var(--line); color:var(--muted);
+    background:var(--surface); transition:border-color .15s;
+  }
+  nav.jump a.d2{ color:var(--day2); }
+  nav.jump a.d3{ color:var(--day3); }
+  nav.jump a:hover{ border-color:currentColor; }
+  nav.jump .count{ font-variant-numeric:tabular-nums; opacity:.7; }
+
+  .prereq{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:20px 22px; margin:28px 0 8px;
+  }
+  .prereq h2{ font-size:15px; margin:0 0 10px; font-weight:700; }
+  .prereq ul{ margin:0; padding-left:20px; }
+  .prereq li{ margin:5px 0; font-size:14.5px; color:var(--ink); }
+  .prereq li b{ color:var(--ink); }
+
+  .day-banner{
+    margin:52px 0 22px; padding:22px 26px; border-radius:14px; color:var(--accent-ink);
+    display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
+  }
+  .day-banner.d2{ background:var(--day2); }
+  .day-banner.d3{ background:var(--day3); }
+  .day-banner .num{ font-size:34px; font-weight:800; letter-spacing:-.02em; }
+  .day-banner .scope{ font-size:14.5px; opacity:.92; }
+
+  .step{
+    position:relative; background:var(--surface); border:1px solid var(--line);
+    border-radius:12px; padding:20px 22px 22px; margin:14px 0;
+  }
+  .step-head{ display:flex; align-items:flex-start; gap:12px; margin-bottom:4px; }
+  .step-num{
+    flex:none; width:30px; height:30px; border-radius:8px; background:var(--code-bg);
+    color:var(--muted); font-weight:700; font-size:13.5px; display:flex; align-items:center;
+    justify-content:center; font-variant-numeric:tabular-nums;
+  }
+  .step.done .step-num{ background:var(--success-bg); color:var(--success); }
+  .step-title{ font-size:16.5px; font-weight:700; margin:2px 0 0; flex:1; text-wrap:balance; }
+  .step-why{ color:var(--muted); font-size:13.8px; margin:6px 0 12px 42px; }
+  .step-body{ margin-left:42px; }
+  .step-body p{ margin:8px 0; font-size:14.5px; }
+  .file-chip{
+    display:inline-flex; align-items:center; gap:7px; background:var(--code-bg);
+    border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:13px;
+    margin:4px 0; color:var(--code-ink);
+  }
+  .file-chip .tag{
+    font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+    padding:1px 6px; border-radius:5px;
+  }
+  .tag-new{ background:var(--success-bg); color:var(--success); }
+  .tag-edit{ background:var(--screenshot-bg); color:var(--screenshot); }
+
+  pre{
+    background:var(--code-bg); color:var(--code-ink); border:1px solid var(--line);
+    border-radius:9px; padding:13px 15px; font-size:13px; overflow-x:auto; margin:10px 0;
+    line-height:1.5;
+  }
+  .check{
+    position:absolute; top:20px; right:20px; width:20px; height:20px; cursor:pointer;
+    accent-color:var(--success);
+  }
+
+  .shot{
+    display:flex; gap:12px; background:var(--screenshot-bg); border:1px solid var(--screenshot);
+    border-radius:9px; padding:12px 14px; margin:12px 0 4px; align-items:flex-start;
+  }
+  .shot .icon{ flex:none; font-size:18px; line-height:1.3; }
+  .shot .txt{ font-size:13.6px; color:var(--ink); }
+  .shot .txt b{ color:var(--screenshot); }
+
+  .step input[type="checkbox"]:checked ~ .step-body{ opacity:.55; }
+  .step input[type="checkbox"]:checked ~ .step-head .step-title{ text-decoration:line-through; opacity:.6; }
+
+  footer{ margin-top:60px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">vstone-databricks-pipeline · System 2 sync</p>
+    <h1>Day 2 &amp; Day 3, replayed step by step</h1>
+    <p>Same Bronze-layer work already verified on System 1 (commits <code>be4b5c7</code> and <code>80ba440</code>), broken back into the same day-by-day sequence — one change at a time, not a bulk drop-in — so your git history and screenshots read the same way on both systems.</p>
+  </header>
+
+  <nav class="jump">
+    <a class="d2" href="#day2">Day 2 <span class="count">· 8 steps</span></a>
+    <a class="d3" href="#day3">Day 3 <span class="count">· 12 steps</span></a>
+  </nav>
+
+  <div class="prereq">
+    <h2>Before you start</h2>
+    <ul>
+      <li>System 2's <b>dev</b> target already uses <code>mode: development</code> — confirmed, so this baseline matches System 1's state right before Day 2 began.</li>
+      <li>Download the current repo as a ZIP again (GitHub → Code → Download ZIP) — you'll copy individual files out of it below, not the whole thing.</li>
+      <li>You're on your own <code>dev</code> branch, up to date, ready to branch off it.</li>
+    </ul>
+  </div>
+
+  <div id="day2" class="day-banner d2">
+    <span class="num">Day 2</span>
+    <span class="scope">Bronze COPY INTO — chunk1_csv + 4 raw files → 5 tables</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s1"/>
+    <div class="step-head"><div class="step-num">1</div><div class="step-title">Branch off dev</div></div>
+    <div class="step-body">
+      <pre>git checkout dev &amp;&amp; git pull
+git checkout -b feature/bronze-layer</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s2"/>
+    <div class="step-head"><div class="step-num">2</div><div class="step-title">Edit <code>src/config/sources.yml</code></div></div>
+    <div class="step-why">This is the "check this first" step — split all 4 chunk chunks onto their own Bronze tables before writing any pipeline code, and mark them as already carrying audit columns from Day 1's chunking output.</div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">src/config/sources.yml</span></div>
+      <p>For each of <code>chunk1_csv</code> / <code>chunk2_csv</code> / <code>chunk3_json</code> / <code>chunk4_xml</code>, add one line and rename the target table:</p>
+      <pre>  target_table: ${catalog}.${bronze_schema}.traffic_counts_copyinto   # _dlt / _autoloader / _pyspark for the other 3
+  has_audit_columns: true</pre>
+      <p>(<code>has_audit_columns</code> only matters to Day 2's COPY INTO technique — the other three chunks carrying it now is harmless prep for Day 3.)</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s3"/>
+    <div class="step-head"><div class="step-num">3</div><div class="step-title">Edit <code>src/common/config_loader.py</code></div></div>
+    <div class="step-why">Resolves the <code>source_key: raw_streets</code>-style indirection that <code>bronze_streets</code>/<code>bronze_node_locations</code>/<code>bronze_streets_list</code>/<code>bronze_telegram</code> use — without this, those 4 sources throw <code>KeyError: 'path'</code>.</div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">src/common/config_loader.py</span></div>
+      <p>Copy the file from the ZIP over your local copy — the change is additive logic inside <code>get_source_config()</code>, no account-specific values involved.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s4"/>
+    <div class="step-head"><div class="step-num">4</div><div class="step-title">Add two shared utilities</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">src/common/metadata.py</span></div>
+      <p>Config-driven <code>COMMENT ON TABLE</code>, sourced from each entry's existing <code>description</code> in <code>sources.yml</code>.</p>
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">src/common/sanity_checks.py</span></div>
+      <p>Row-count + non-null-audit-column gate, run after every Bronze load.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s5"/>
+    <div class="step-head"><div class="step-num">5</div><div class="step-title">Add the COPY INTO pipeline module</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">src/pipelines/bronze/__init__.py</span></div>
+      <p>Empty file — just makes <code>bronze</code> a package.</p>
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">src/pipelines/bronze/copy_into.py</span></div>
+      <p>One generic <code>run_copy_into(spark, source_key, env)</code>, reused for all 5 Day 2 sources.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s6"/>
+    <div class="step-head"><div class="step-num">6</div><div class="step-title">Add the notebook + job resource</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">src/notebooks/02_bronze_copy_into.py</span></div>
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">resources/jobs/bronze_copy_into_job.yml</span></div>
+      <p>One job, 5 parallel tasks, same notebook, different <code>source_key</code> each time.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s7"/>
+    <div class="step-head"><div class="step-num">7</div><div class="step-title">Add the test file, then run local checks</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">tests/unit/test_copy_into.py</span></div>
+      <pre>flake8 src tests --max-line-length=120
+pytest tests/unit -v</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — the terminal showing every test passing. This is your literal "Unit Testing Results" deliverable for Day 2.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s8"/>
+    <div class="step-head"><div class="step-num">8</div><div class="step-title">Deploy and run against your dev workspace</div></div>
+    <div class="step-body">
+      <pre>databricks bundle validate -t dev
+databricks bundle deploy   -t dev
+databricks bundle run bronze_copy_into_job -t dev</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — the run URL + <code>SUCCESS</code> status in the terminal.</div>
+      </div>
+      <p>Then open <b>Catalog Explorer</b> and confirm 5 new tables under your own <code>dev_&lt;you&gt;_bronze</code> schema, each with a comment.</p>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — Catalog Explorer showing the 5 tables + comments. This is exactly the "schema validation, audit columns, data landed in Unity Catalog Bronze" evidence the Day 4 evaluation checklist asks for.</div>
+      </div>
+      <p>Commit — <b>do not open a PR yet</b>, Day 3 continues on this same branch:</p>
+      <pre>git add .
+git commit -m "Day 2: Bronze COPY INTO ingestion for chunk1_csv + 4 raw files"
+git push -u origin feature/bronze-layer</pre>
+    </div>
+  </div>
+
+  <div id="day3" class="day-banner d3">
+    <span class="num">Day 3</span>
+    <span class="scope">Auto Loader + PySpark + DLT — chunk2/3/4 → 3 more tables</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s9"/>
+    <div class="step-head"><div class="step-num">1</div><div class="step-title">Edit <code>databricks.yml</code> — one line</div></div>
+    <div class="step-why">Without this, the DLT pipeline resource silently won't deploy at all.</div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">databricks.yml</span></div>
+      <p>Add one line to <code>include:</code> — don't copy the whole file, yours has your own workspace host:</p>
+      <pre>include:
+  - resources/jobs/*.yml
+  - resources/pipelines/*.yml   # add this line
+  - resources/*.yml</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s10"/>
+    <div class="step-head"><div class="step-num">2</div><div class="step-title">Edit <code>setup.cfg</code> — one line</div></div>
+    <div class="step-why">The DLT source file uses Databricks-injected globals (<code>spark</code>) the same way notebooks do, but lives outside <code>src/notebooks/</code>.</div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">setup.cfg</span></div>
+      <pre>exclude = .git,__pycache__,src/notebooks,src/pipelines/bronze/dlt_traffic_counts.py</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s11"/>
+    <div class="step-head"><div class="step-num">3</div><div class="step-title">Add the Auto Loader pipeline module</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">src/pipelines/bronze/autoloader_ingest.py</span></div>
+      <p>Loads <code>chunk3.json</code> via its <b>exact file path</b>, not the shared <code>chunks/</code> directory + a glob filter — the filter option proved unreliable on this runtime the first time around.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s12"/>
+    <div class="step-head"><div class="step-num">4</div><div class="step-title">Add the PySpark XML pipeline module</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">src/pipelines/bronze/pyspark_xml_ingest.py</span></div>
+      <p>Column-name sanitizing + explicit <code>mode="overwrite"</code> idempotency (this technique has no built-in rerun-safety of its own).</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s13"/>
+    <div class="step-head"><div class="step-num">5</div><div class="step-title">Add the DLT pipeline source</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">src/pipelines/bronze/dlt_traffic_counts.py</span></div>
+      <p>Uses <code>@dlt.expect</code> for its own data-quality checks — deliberately not <code>common.sanity_checks</code>.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s14"/>
+    <div class="step-head"><div class="step-num">6</div><div class="step-title">Add the two notebook entrypoints</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">src/notebooks/03_bronze_autoloader.py</span></div>
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">src/notebooks/04_bronze_pyspark_xml.py</span></div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s15"/>
+    <div class="step-head"><div class="step-num">7</div><div class="step-title">Add the DLT pipeline resource</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">resources/pipelines/bronze_dlt_pipeline.yml</span></div>
+      <p>Uses <code>${resources.schemas.bronze_schema.name}</code> for its target schema — DABs resolves that to your real mode-prefixed schema name at deploy time. Already confirmed working, nothing to adjust here.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s16"/>
+    <div class="step-head"><div class="step-num">8</div><div class="step-title">Add the combined job resource</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">resources/jobs/bronze_autoloader_pyspark_dlt_job.yml</span></div>
+      <p>One job, 3 tasks: Auto Loader, PySpark XML, and a <code>pipeline_task</code> triggering the DLT pipeline above.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s17"/>
+    <div class="step-head"><div class="step-num">9</div><div class="step-title">Add the test files, then run local checks</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">tests/unit/test_autoloader_ingest.py</span></div>
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">tests/unit/test_pyspark_xml_ingest.py</span></div>
+      <pre>flake8 src tests --max-line-length=120
+pytest tests/unit -v</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — 22 tests passing, your Day 3 "Unit Testing Results."</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s18"/>
+    <div class="step-head"><div class="step-num">10</div><div class="step-title">Deploy and run against your dev workspace</div></div>
+    <div class="step-body">
+      <pre>databricks bundle validate -t dev
+databricks bundle deploy   -t dev
+databricks bundle run bronze_autoloader_pyspark_dlt_job -t dev</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — all 3 tasks showing <code>SUCCESS</code>.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s19"/>
+    <div class="step-head"><div class="step-num">11</div><div class="step-title">Verify in the workspace UI</div></div>
+    <div class="step-body">
+      <p>Open the <b>Pipelines</b> tab — confirm the DLT pipeline shows a green run with its <code>@dlt.expect</code> metrics visible.</p>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — this is your strongest evidence against "not confident while talking about DABs implementation."</div>
+      </div>
+      <p>Open <b>Catalog Explorer</b> — confirm all <b>8</b> Bronze tables total now exist.</p>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — the full 8-table Bronze layer, one shot that covers the whole medallion Bronze story.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s20"/>
+    <div class="step-head"><div class="step-num">12</div><div class="step-title">Commit, open the PR, merge, sync main</div></div>
+    <div class="step-body">
+      <pre>git add .
+git commit -m "Day 3: Bronze ingestion via Auto Loader, PySpark XML, and DLT"
+git push origin feature/bronze-layer
+
+gh pr create --base dev --head feature/bronze-layer \
+  --title "Bronze layer: Day 2 COPY INTO + Day 3 Auto Loader/PySpark/DLT"</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — the PR page with CI checks green.</div>
+      </div>
+      <p>Merge once checks pass, then repeat the same promotion pattern for <code>main</code>:</p>
+      <pre>gh pr create --base main --head dev --title "Promote Bronze layer to main"</pre>
+    </div>
+  </div>
+
+  <footer>Checkboxes save locally in this browser tab only — they're for your own pacing, not a submission record.</footer>
+</div>
+
+<script>
+  document.querySelectorAll('.step input[type="checkbox"]').forEach(function(box){
+    var key = 'bronze-runbook-' + box.id;
+    box.checked = localStorage.getItem(key) === '1';
+    if(box.checked) box.closest('.step').classList.add('done');
+    box.addEventListener('change', function(){
+      localStorage.setItem(key, box.checked ? '1' : '0');
+      box.closest('.step').classList.toggle('done', box.checked);
+    });
+  });
+</script>
+</body>
+</html>

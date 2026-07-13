@@ -5,6 +5,16 @@
 #   databricks bundle deploy   -t dev
 #   databricks bundle run data_chunking_job -t dev
 #
+# Two tasks, real orchestration: download_raw_data (Kaggle -> Volume) runs
+# first, chunk_cars_csv depends on it -- the whole Day 1 pipeline runs
+# end-to-end from nothing, no manual notebook run required first. Display
+# name stays exactly "Data Chunking" (the brief requires this literal name)
+# even though the job now does two things.
+#
+# Both tasks default force to "false" (skip if already done) -- pass
+# --params '{"force": "true"}' at run time to force either task to redo its
+# work regardless of what's already present.
+#
 # No job_clusters / new_cluster / existing_cluster_id below is intentional —
 # omitting a cluster spec on a task runs it on serverless compute, which is
 # required on Free Edition (no managed clusters allowed). If your workspace
@@ -27,12 +37,24 @@ resources:
           default: ${bundle.target}
 
       tasks:
+        - task_key: download_raw_data
+          notebook_task:
+            notebook_path: ../../src/notebooks/00_download_raw_data.py
+            base_parameters:
+              catalog: ${var.catalog}
+              env: ${bundle.target}
+              files: "cars.csv,streets.csv,node_locations.csv,streets_list.csv,telegram.csv"
+              force: "false"
+
         - task_key: chunk_cars_csv
+          depends_on:
+            - task_key: download_raw_data
           notebook_task:
             notebook_path: ../../src/notebooks/01_data_chunking.py
             base_parameters:
               catalog: ${var.catalog}
               env: ${bundle.target}
+              force: "false"
 
       email_notifications:
         on_failure:

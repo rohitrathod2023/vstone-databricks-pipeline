@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System 2 Sync — Day 1 Follow-up Runbook</title>
+<style>
+  :root{
+    --bg:#f5f6f7; --surface:#ffffff; --ink:#1c2126; --muted:#6b7280; --line:#e2e5e8;
+    --accent:#b5551f; --accent-ink:#ffffff; --screenshot:#2f6690; --screenshot-bg:#eaf2f7;
+    --success:#2f6b40; --success-bg:#eaf4ec; --code-bg:#f0f1f3; --code-ink:#3a3f45;
+    --bugfix:#8a3a3a; --bugfix-bg:#fbeeee;
+    --secA:#b5551f; --secB:#8a3a3a; --secC:#3a6f7a;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#181b1f; --surface:#20242a; --ink:#edeff1; --muted:#9aa3ac; --line:#2c3138;
+      --accent:#e08a52; --accent-ink:#20140b; --screenshot:#7db3d6; --screenshot-bg:#1c2a33;
+      --success:#7fcf93; --success-bg:#16261a; --code-bg:#171a1e; --code-ink:#d7dbe0;
+      --bugfix:#e08a8a; --bugfix-bg:#2a1a1a;
+      --secA:#e08a52; --secB:#e08a8a; --secC:#7fc4d4;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#181b1f; --surface:#20242a; --ink:#edeff1; --muted:#9aa3ac; --line:#2c3138;
+    --accent:#e08a52; --accent-ink:#20140b; --screenshot:#7db3d6; --screenshot-bg:#1c2a33;
+    --success:#7fcf93; --success-bg:#16261a; --code-bg:#171a1e; --code-ink:#d7dbe0;
+    --bugfix:#e08a8a; --bugfix-bg:#2a1a1a;
+    --secA:#e08a52; --secB:#e08a8a; --secC:#7fc4d4;
+  }
+  :root[data-theme="light"]{
+    --bg:#f5f6f7; --surface:#ffffff; --ink:#1c2126; --muted:#6b7280; --line:#e2e5e8;
+    --accent:#b5551f; --accent-ink:#ffffff; --screenshot:#2f6690; --screenshot-bg:#eaf2f7;
+    --success:#2f6b40; --success-bg:#eaf4ec; --code-bg:#f0f1f3; --code-ink:#3a3f45;
+    --bugfix:#8a3a3a; --bugfix-bg:#fbeeee;
+    --secA:#b5551f; --secB:#8a3a3a; --secC:#3a6f7a;
+  }
+
+  * { box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  code, pre, .mono, .path{
+    font-family:"Cascadia Code","Cascadia Mono",ui-monospace,"Segoe UI Mono",Consolas,"Courier New",monospace;
+  }
+  .wrap{ max-width:800px; margin:0 auto; padding:0 20px 120px; }
+
+  header.top{ padding:56px 0 28px; border-bottom:1px solid var(--line); }
+  header.top .eyebrow{
+    font-size:12.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 10px;
+  }
+  header.top h1{
+    font-size:clamp(26px,4vw,36px); font-weight:700; margin:0 0 12px; letter-spacing:-.01em;
+    text-wrap:balance;
+  }
+  header.top p{ margin:0; color:var(--muted); max-width:65ch; font-size:15.5px; }
+
+  nav.jump{
+    position:sticky; top:0; z-index:20; background:var(--bg);
+    border-bottom:1px solid var(--line); padding:10px 0;
+    display:flex; gap:8px; margin-bottom:8px;
+  }
+  nav.jump a{
+    flex:1; text-align:center; padding:9px 8px; border-radius:8px; font-size:13px;
+    font-weight:600; text-decoration:none; border:1px solid var(--line); color:var(--muted);
+    background:var(--surface); transition:border-color .15s;
+  }
+  nav.jump a.a{ color:var(--secA); }
+  nav.jump a.b{ color:var(--secB); }
+  nav.jump a.c{ color:var(--secC); }
+  nav.jump a:hover{ border-color:currentColor; }
+  nav.jump .count{ font-variant-numeric:tabular-nums; opacity:.7; }
+
+  .prereq{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:20px 22px; margin:28px 0 8px;
+  }
+  .prereq h2{ font-size:15px; margin:0 0 10px; font-weight:700; }
+  .prereq ul{ margin:0; padding-left:20px; }
+  .prereq li{ margin:5px 0; font-size:14.5px; }
+
+  .day-banner{
+    margin:52px 0 22px; padding:22px 26px; border-radius:14px; color:var(--accent-ink);
+    display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
+  }
+  .day-banner.a{ background:var(--secA); }
+  .day-banner.b{ background:var(--secB); }
+  .day-banner.c{ background:var(--secC); }
+  .day-banner .num{ font-size:26px; font-weight:800; letter-spacing:-.01em; }
+  .day-banner .scope{ font-size:14px; opacity:.92; }
+
+  .step{
+    position:relative; background:var(--surface); border:1px solid var(--line);
+    border-radius:12px; padding:20px 22px 22px; margin:14px 0;
+  }
+  .step-head{ display:flex; align-items:flex-start; gap:12px; margin-bottom:4px; }
+  .step-num{
+    flex:none; width:30px; height:30px; border-radius:8px; background:var(--code-bg);
+    color:var(--muted); font-weight:700; font-size:13.5px; display:flex; align-items:center;
+    justify-content:center; font-variant-numeric:tabular-nums;
+  }
+  .step.done .step-num{ background:var(--success-bg); color:var(--success); }
+  .step-title{ font-size:16px; font-weight:700; margin:2px 0 0; flex:1; text-wrap:balance; }
+  .step-why{ color:var(--muted); font-size:13.5px; margin:6px 0 12px 42px; }
+  .step-body{ margin-left:42px; }
+  .step-body p{ margin:8px 0; font-size:14.5px; }
+  .file-chip{
+    display:inline-flex; align-items:center; gap:7px; background:var(--code-bg);
+    border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:13px;
+    margin:4px 0; color:var(--code-ink);
+  }
+  .file-chip .tag{
+    font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+    padding:1px 6px; border-radius:5px;
+  }
+  .tag-new{ background:var(--success-bg); color:var(--success); }
+  .tag-edit{ background:var(--screenshot-bg); color:var(--screenshot); }
+
+  pre{
+    background:var(--code-bg); color:var(--code-ink); border:1px solid var(--line);
+    border-radius:9px; padding:13px 15px; font-size:12.8px; overflow-x:auto; margin:10px 0;
+    line-height:1.5;
+  }
+  .check{
+    position:absolute; top:20px; right:20px; width:20px; height:20px; cursor:pointer;
+    accent-color:var(--success);
+  }
+
+  .shot{
+    display:flex; gap:12px; background:var(--screenshot-bg); border:1px solid var(--screenshot);
+    border-radius:9px; padding:12px 14px; margin:12px 0 4px; align-items:flex-start;
+  }
+  .shot .icon{ flex:none; font-size:18px; line-height:1.3; }
+  .shot .txt{ font-size:13.4px; color:var(--ink); }
+  .shot .txt b{ color:var(--screenshot); }
+
+  .bug{
+    display:flex; gap:12px; background:var(--bugfix-bg); border:1px solid var(--bugfix);
+    border-radius:9px; padding:12px 14px; margin:12px 0 4px; align-items:flex-start;
+  }
+  .bug .icon{ flex:none; font-size:18px; line-height:1.3; }
+  .bug .txt{ font-size:13.4px; color:var(--ink); }
+  .bug .txt b{ color:var(--bugfix); }
+
+  .step input[type="checkbox"]:checked ~ .step-body{ opacity:.55; }
+  .step input[type="checkbox"]:checked ~ .step-head .step-title{ text-decoration:line-through; opacity:.6; }
+
+  footer{ margin-top:60px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">vstone-databricks-pipeline · System 2 sync</p>
+    <h1>Day 1 follow-up, replayed step by step</h1>
+    <p>Three deliberate design upgrades on top of System 2's already-working Day 1 job (not bug fixes for it): one-job orchestration, skip-based idempotency, and a real audit-logging bug caught along the way. Same file-by-file cadence as the Day 2/3 sync.</p>
+  </header>
+
+  <nav class="jump">
+    <a class="a" href="#secA">Orchestration <span class="count">· 6</span></a>
+    <a class="b" href="#secB">Audit fix <span class="count">· 4</span></a>
+    <a class="c" href="#secC">Verify <span class="count">· 4</span></a>
+  </nav>
+
+  <div class="prereq">
+    <h2>Before you start</h2>
+    <ul>
+      <li>Pull/copy the current System 1 repo state — this follow-up sits on top of the Day 1/2/3 work you already synced.</li>
+      <li>Branch off <code>dev</code>: <code>git checkout dev && git pull && git checkout -b fix/day1-job-orchestration</code> — this is a small follow-up, not Bronze-layer work, so it does not go on <code>feature/bronze-layer</code>.</li>
+      <li>All 5 raw files should already be sitting in your Volume from previous runs — that's fine, the download task will just skip them.</li>
+    </ul>
+  </div>
+
+  <div id="secA" class="day-banner a">
+    <span class="num">A</span>
+    <span class="scope">Merge download into the job + skip-based idempotency for chunking</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s1"/>
+    <div class="step-head"><div class="step-num">1</div><div class="step-title">Edit the job YAML — add the download task upstream</div></div>
+    <div class="step-why">Today the download notebook has to be run by hand before the chunking job has anything to chunk. This makes it one job, two tasks, real dependency — no manual step to run Day 1 from scratch.</div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">resources/jobs/data_chunking_job.yml</span></div>
+      <p>Display name stays exactly <code>"Data Chunking"</code> — only the <code>tasks:</code> list changes:</p>
+      <pre>tasks:
+  - task_key: download_raw_data
+    notebook_task:
+      notebook_path: ../../src/notebooks/00_download_raw_data.py
+      base_parameters:
+        catalog: ${var.catalog}
+        env: ${bundle.target}
+        files: "cars.csv,streets.csv,node_locations.csv,streets_list.csv,telegram.csv"
+        force: "false"
+
+  - task_key: chunk_cars_csv
+    depends_on:
+      - task_key: download_raw_data
+    notebook_task:
+      notebook_path: ../../src/notebooks/01_data_chunking.py
+      base_parameters:
+        catalog: ${var.catalog}
+        env: ${bundle.target}
+        force: "false"</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s2"/>
+    <div class="step-head"><div class="step-num">2</div><div class="step-title">Edit the download notebook — full file list + config-driven schema</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">src/notebooks/00_download_raw_data.py</span></div>
+      <p>Two changes. First, the <code>files</code> widget default becomes all 5 (was 2, for cautious manual testing — the job's <code>base_parameters</code> already override it, but a standalone run should match what the job actually does):</p>
+      <pre>dbutils.widgets.text(
+    "files",
+    "cars.csv,streets.csv,node_locations.csv,streets_list.csv,telegram.csv",
+    "Comma-separated files to download",
+)</pre>
+      <p>Second, replace the hardcoded <code>schema</code> widget with an <code>env</code> widget, and resolve <code>raw_schema</code> through <code>config_loader</code> — the same way every other pipeline in this project gets it, instead of a literal that has to be kept in sync with <code>env.yml</code> by hand:</p>
+      <pre>from common.config_loader import get_env_config  # add near the other early imports
+
+dbutils.widgets.text("env", "dev", "Environment (dev/test/prod) — resolves raw_schema via config_loader")
+# (remove the old dbutils.widgets.text("schema", "dev_rohitrathodcomp_raw", ...) line)
+
+env = dbutils.widgets.get("env")
+schema = get_env_config(env)["raw_schema"]</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s3"/>
+    <div class="step-head"><div class="step-num">3</div><div class="step-title">Edit chunking.py — add the completion-marker skip check</div></div>
+    <div class="step-why">Overwrite-mode already makes re-runs safe, but it still fully re-sorts and rewrites all 24.6M rows of cars.csv every time. A bare "does chunk1.csv exist" check would be fooled by a crash partway through a write — this checks a marker written last, only after all 4 chunks succeed.</div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">src/pipelines/ingestion/chunking.py</span></div>
+      <p>Add near the top, after <code>_validate_split()</code>:</p>
+      <pre>_COMPLETION_MARKER_NAME = "_chunking_complete"
+
+
+def _completion_marker_path(env: str) -> str:
+    chunks_dir = get_source_config("chunk1_csv", env=env)["path"].rsplit("/", 1)[0]
+    return f"{chunks_dir}/{_COMPLETION_MARKER_NAME}"
+
+
+def chunking_already_complete(env: str = "dev") -> bool:
+    return os.path.exists(_completion_marker_path(env))
+
+
+def mark_chunking_complete(env: str) -> None:
+    with open(_completion_marker_path(env), "w") as f:
+        f.write(f"run_id={current_run_id()}\n")</pre>
+      <p>Add <code>import os</code> at the top, and import <code>current_run_id</code> alongside <code>get_logger</code>:</p>
+      <pre>from common.logger import current_run_id, get_logger</pre>
+      <p>Then change <code>run()</code>'s signature and add the skip branch right after the log line:</p>
+      <pre>def run(spark, env: str = "dev", force: bool = False) -> dict:
+    _validate_split()
+    catalog = get_source_config("chunk1_csv", env=env)["target_table"].split(".")[0]
+    log = get_logger(__name__, catalog=catalog, job_name="Data Chunking")
+
+    if not force and chunking_already_complete(env):
+        log.info("Chunks already present and complete — skipping (pass force=True to redo)")
+        results = {
+            chunk_key: read_source(spark, get_source_config(chunk_key, env=env)).count()
+            for _, chunk_key in CHUNK_PLAN
+        }
+        log.info(f"Existing chunk row counts: {results}")
+        return results
+
+    log.info("Reading raw_cars from Volumes")
+    # ...existing body continues unchanged...</pre>
+      <p>And write the marker right after the existing <code>"Chunking complete: ..."</code> log line, just before <code>return results</code>:</p>
+      <pre>    log.info(f"Chunking complete: {results}")
+    mark_chunking_complete(env)
+    return results</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s4"/>
+    <div class="step-head"><div class="step-num">4</div><div class="step-title">Edit the chunking notebook — add the force widget</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">src/notebooks/01_data_chunking.py</span></div>
+      <pre>dbutils.widgets.dropdown("force", "false", ["false", "true"], "Reprocess even if chunks already exist")
+force = dbutils.widgets.get("force") == "true"
+# ...
+results = run(spark, env=env, force=force)</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s5"/>
+    <div class="step-head"><div class="step-num">5</div><div class="step-title">Add the skip-check unit tests</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">tests/unit/test_chunking.py</span></div>
+      <p>Four new tests: marker presence/absence, a partial-file-without-marker case, and that <code>run()</code> actually skips vs. actually redoes work under <code>force</code>. Copy these in from the reference repo rather than retyping — they rely on exact fixture wiring (<code>tmp_path</code>, <code>.as_posix()</code> for cross-platform marker paths).</p>
+      <p><b>Also re-check the two pre-existing tests</b> (<code>test_split_is_chronological_and_covers_all_rows</code>, <code>test_split_is_idempotent</code>) — they need two added lines each to bypass the real marker check, otherwise a real leftover marker file from an earlier local run can make them wrongly skip:</p>
+      <pre>monkeypatch.setattr(chunking_mod, "chunking_already_complete", lambda env: False)
+monkeypatch.setattr(chunking_mod, "mark_chunking_complete", lambda env: None)</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s6"/>
+    <div class="step-head"><div class="step-num">6</div><div class="step-title">Run flake8 + pytest locally</div></div>
+    <div class="step-body">
+      <pre>flake8 src tests --max-line-length=120
+pytest tests/unit -v</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — all tests passing (should be 26 at this point, before Section B adds 3 more).</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="secB" class="day-banner b">
+    <span class="num">B</span>
+    <span class="scope">Real bug found: audit logging was silently no-op'ing in dev</span>
+  </div>
+
+  <div class="step">
+    <div class="bug">
+      <div class="icon">🐛</div>
+      <div class="txt"><b>Why this exists:</b> <code>common/logger.py</code> hardcoded the audit schema name as the literal string <code>"audit"</code>. But <code>mode: development</code> auto-prefixes schema names per-target — exactly like <code>raw_schema</code>/<code>bronze_schema</code> already do — so the real deployed schema is <code>dev_&lt;you&gt;_audit</code>, not <code>audit</code>. Every job run since Day 1 has been silently failing to write to the audit table (best-effort, so it never broke anything — it just meant the "Audit &amp; Observability Layer" wasn't actually recording anything in dev). You will likely see a <code>SCHEMA_NOT_FOUND</code> error in your own job output before applying this fix — that's expected, and this section makes it go away.</div>
+    </div>
+    <div class="step-head" style="margin-top:16px"><div class="step-num">7</div><div class="step-title">Fix env.yml — audit_schema should be a bare schema name</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">src/config/env.yml</span></div>
+      <p>Was inconsistently fully-qualified (<code>vstone_traffic_dev.audit</code>); now matches the bare-name style <code>raw_schema</code>/<code>bronze_schema</code> already use:</p>
+      <pre>dev:
+  audit_schema: dev_rohitrathodcomp_audit   # was: vstone_traffic_dev.audit
+
+test:
+  audit_schema: audit                       # was: vstone_traffic_test.audit
+
+prod:
+  audit_schema: audit                       # was: vstone_traffic_prod.audit</pre>
+      <p>Use your own account's prefix for <code>dev</code> (matching whatever you already used for <code>raw_schema</code>/<code>bronze_schema</code>), not <code>rohitrathodcomp</code> literally.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s8"/>
+    <div class="step-head"><div class="step-num">8</div><div class="step-title">Fix logger.py — resolve the schema instead of hardcoding it</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">src/common/logger.py</span></div>
+      <p>Replace the hardcoded table-name line in <code>_DeltaAuditHandler.__init__</code>:</p>
+      <pre>self._table = self._resolve_table(catalog)   # was: f"`{catalog}`.audit.pipeline_logs"</pre>
+      <p>And add the resolver method:</p>
+      <pre>@staticmethod
+def _resolve_table(catalog: str) -> str:
+    try:
+        from common.config_loader import get_env_config
+        audit_schema = get_env_config()["audit_schema"]
+    except Exception:
+        audit_schema = "audit"
+    return f"`{catalog}`.{audit_schema}.pipeline_logs"</pre>
+      <p>The fallback matters: this handler is designed to never raise, even if config loading itself fails for some reason.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s9"/>
+    <div class="step-head"><div class="step-num">9</div><div class="step-title">Add the logger test file, then re-run flake8 + pytest</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new</span> <span class="path">tests/unit/test_logger.py</span></div>
+      <p>Three tests: dev resolves to the prefixed schema, test/prod resolve to the plain <code>audit</code> schema, and a broken config still falls back cleanly rather than raising.</p>
+      <pre>flake8 src tests --max-line-length=120
+pytest tests/unit -v</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — 29 tests passing now (26 + 3 new logger tests). This is your updated Day 1 "Unit Testing Results."</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="secC" class="day-banner c">
+    <span class="num">C</span>
+    <span class="scope">Deploy and prove all three behaviors live, not just in tests</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s10"/>
+    <div class="step-head"><div class="step-num">10</div><div class="step-title">Validate, deploy, and run once (first real run)</div></div>
+    <div class="step-body">
+      <pre>databricks bundle validate -t dev
+databricks bundle deploy   -t dev
+databricks bundle run data_chunking_job -t dev</pre>
+      <p>All 5 raw files should already be present from before, so <code>download_raw_data</code> skips everything; <code>chunk_cars_csv</code> does a real full run since this is the first time the completion marker is created.</p>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — both tasks <code>SUCCESS</code> in the run UI, and confirm no <code>SCHEMA_NOT_FOUND</code> text in the output (that's the audit fix working).</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s11"/>
+    <div class="step-head"><div class="step-num">11</div><div class="step-title">Run it again immediately — prove the skip, not just the timer</div></div>
+    <div class="step-why">Wall-clock time alone isn't proof — serverless cluster startup dominates either way. Check the actual chunk file instead: it must not have been rewritten.</div>
+    <div class="step-body">
+      <pre>databricks bundle run data_chunking_job -t dev</pre>
+      <p>Then check the chunk output directly:</p>
+      <pre>databricks fs ls -l "dbfs:/Volumes/&lt;catalog&gt;/&lt;raw_schema&gt;/raw_volume/chunks/chunk1.csv/"</pre>
+      <p>There should be exactly <b>one</b> <code>part-00000-...csv</code> file, timestamped from the <i>previous</i> run — not this one. If a new part-file with a fresh timestamp shows up, the skip isn't working.</p>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — the file listing showing the single part-file's timestamp predates this run. This is the concrete "idempotent AND compute-conscious" evidence for Day 4, stronger than the earlier overwrite-only proof.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s12"/>
+    <div class="step-head"><div class="step-num">12</div><div class="step-title">Run once more with force=true — prove the override actually works</div></div>
+    <div class="step-body">
+      <pre>databricks bundle run data_chunking_job -t dev --params force=true</pre>
+      <p>Re-check the same file listing — this time a <b>new</b> part-file should appear with a fresh timestamp, proving <code>force=true</code> genuinely bypasses the skip rather than just returning cached numbers.</p>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — the new part-file timestamp, side by side with the previous step's screenshot, as your before/after override proof.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s13"/>
+    <div class="step-head"><div class="step-num">13</div><div class="step-title">Confirm the audit table is actually receiving rows</div></div>
+    <div class="step-body">
+      <pre>databricks tables get &lt;catalog&gt;.&lt;dev_prefix&gt;_audit.pipeline_logs</pre>
+      <p>Open <b>Catalog Explorer</b> and confirm <code>pipeline_logs</code> exists under your <code>dev_&lt;you&gt;_audit</code> schema with rows in it — this is the "Audit &amp; Observability Layer" actually working, not just a box on the architecture diagram.</p>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — Catalog Explorer showing <code>pipeline_logs</code> with real rows, timestamps matching your recent runs.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s14"/>
+    <div class="step-head"><div class="step-num">14</div><div class="step-title">Commit, PR, merge</div></div>
+    <div class="step-body">
+      <pre>git add .
+git commit -m "Day 1: orchestrate download+chunking as one job, add skip-based
+idempotency to chunking (consistent with existing COPY INTO / download-notebook
+pattern), fix audit schema resolution to match mode: development prefixing"
+
+git push -u origin fix/day1-job-orchestration
+
+gh pr create --base dev --head fix/day1-job-orchestration \
+  --title "Day 1: job orchestration, skip-based idempotency, audit schema fix"</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — the PR page with CI checks green.</div>
+      </div>
+      <p>Merge once checks pass, then sync to <code>main</code> the same way as before:</p>
+      <pre>gh pr create --base main --head dev --title "Promote Day 1 follow-up to main"</pre>
+    </div>
+  </div>
+
+  <footer>Checkboxes save locally in this browser tab only — they're for your own pacing, not a submission record.</footer>
+</div>
+
+<script>
+  document.querySelectorAll('.step input[type="checkbox"]').forEach(function(box){
+    var key = 'day1-followup-runbook-' + box.id;
+    box.checked = localStorage.getItem(key) === '1';
+    if(box.checked) box.closest('.step').classList.add('done');
+    box.addEventListener('change', function(){
+      localStorage.setItem(key, box.checked ? '1' : '0');
+      box.closest('.step').classList.toggle('done', box.checked);
+    });
+  });
+</script>
+</body>
+</html>

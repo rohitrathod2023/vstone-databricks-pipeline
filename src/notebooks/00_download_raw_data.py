@@ -18,9 +18,11 @@
 # MAGIC # paste your token from kaggle.com/settings/api when prompted
 # MAGIC ```
 # MAGIC
-# MAGIC **Test with the small files first** (default below) before trusting this
-# MAGIC with `streets.csv` (7.8GB) — confirms serverless compute can actually reach
-# MAGIC Kaggle's API before committing to a large transfer.
+# MAGIC The `files` widget defaults to all 5 files so this notebook and the job
+# MAGIC task that calls it always do a complete Day 1 landing unattended. If
+# MAGIC you're testing against Kaggle's API for the first time by hand, narrow
+# MAGIC the `files` widget to something small (e.g. `node_locations.csv`) before
+# MAGIC trusting a manual run with `streets.csv` (7.8GB).
 
 # COMMAND ----------
 
@@ -39,23 +41,28 @@ SRC_DIR = os.path.join(REPO_ROOT, "src")
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
+from common.config_loader import get_env_config  # noqa: E402
+
 # COMMAND ----------
 
 dbutils.widgets.text("catalog", "vstone_traffic_dev", "Catalog")
-dbutils.widgets.text("schema", "dev_rohitrathodcomp_raw", "Schema")
+dbutils.widgets.text("env", "dev", "Environment (dev/test/prod) — resolves raw_schema via config_loader")
 dbutils.widgets.text("volume", "raw_volume", "Volume")
 dbutils.widgets.text("dataset", "xxjcaxx/trafficsimulator", "Kaggle dataset ref")
 dbutils.widgets.text(
     "files",
-    "node_locations.csv,streets_list.csv",
-    "Comma-separated files to download (start small, add cars.csv/telegram.csv/streets.csv once confirmed working)",
+    "cars.csv,streets.csv,node_locations.csv,streets_list.csv,telegram.csv",
+    "Comma-separated files to download",
 )
 dbutils.widgets.text("kaggle_secret_scope", "kaggle", "Databricks secret scope holding the Kaggle token")
 dbutils.widgets.text("kaggle_secret_key", "api_token", "Secret key name within that scope")
 dbutils.widgets.dropdown("force", "false", ["false", "true"], "Re-download even if file already exists")
 
 catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
+env = dbutils.widgets.get("env")
+# raw_schema comes from config_loader/env.yml, the same as every other pipeline
+# in this project -- not a widget default that has to be kept in sync by hand.
+schema = get_env_config(env)["raw_schema"]
 volume = dbutils.widgets.get("volume")
 dataset = dbutils.widgets.get("dataset")
 files = [f.strip() for f in dbutils.widgets.get("files").split(",") if f.strip()]
