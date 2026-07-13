@@ -15,7 +15,11 @@ SRC_DIR = Path(__file__).resolve().parents[2] / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from pipelines.bronze.autoloader_ingest import build_autoloader_options, checkpoint_path  # noqa: E402
+from pipelines.bronze.autoloader_ingest import (  # noqa: E402
+    build_autoloader_options,
+    checkpoint_path,
+    schema_location,
+)
 
 
 def test_autoloader_options_have_no_path_glob_filter():
@@ -28,37 +32,45 @@ def test_autoloader_options_have_no_path_glob_filter():
         "path": "/Volumes/cat/raw/raw_volume/chunks/chunk3.json",
         "format": "json",
     }
-    options = build_autoloader_options(cfg, checkpoint="/Volumes/cat/raw/raw_volume/_checkpoints/table")
+    options = build_autoloader_options(cfg, schema_loc="/Volumes/cat/ops/checkpoints_volume/table/schema")
 
     assert "pathGlobFilter" not in options
     assert "cloudFiles.pathGlobFilter" not in options
     assert options["cloudFiles.format"] == "json"
-    assert options["cloudFiles.schemaLocation"] == "/Volumes/cat/raw/raw_volume/_checkpoints/table"
+    assert options["cloudFiles.schemaLocation"] == "/Volumes/cat/ops/checkpoints_volume/table/schema"
 
 
-def test_checkpoint_path_lives_under_the_same_raw_volume():
-    cfg = {
-        "path": "/Volumes/vstone_traffic_dev/dev_rohitrathodcomp_raw/raw_volume/chunks/chunk3.json",
-        "target_table": "vstone_traffic_dev.dev_rohitrathodcomp_bronze.traffic_counts_autoloader",
-    }
-    assert checkpoint_path(cfg) == (
-        "/Volumes/vstone_traffic_dev/dev_rohitrathodcomp_raw/raw_volume/_checkpoints/traffic_counts_autoloader"
-    )
+def test_checkpoint_path_lives_under_the_ops_volume_not_raw():
+    """Checkpoints are pipeline operational state, not data -- they live in
+    the dedicated ops schema/volume (resources/catalog.yml), never nested
+    inside the raw landing Volume."""
+    cfg = {"target_table": "vstone_traffic_dev.dev_rohitrathodcomp_bronze.traffic_counts_autoloader"}
+
+    path = checkpoint_path(cfg, env="dev")
+
+    assert path.startswith("/Volumes/vstone_traffic_dev/dev_rohitrathodcomp_ops/checkpoints_volume/")
+    assert "raw_volume" not in path
+
+
+def test_checkpoint_and_schema_location_are_different_paths():
+    """Per Databricks' own guidance: conflating checkpointLocation and
+    cloudFiles.schemaLocation makes it impossible to clear schema-evolution
+    state without also discarding the checkpoint's exactly-once history."""
+    cfg = {"target_table": "vstone_traffic_dev.dev_rohitrathodcomp_bronze.traffic_counts_autoloader"}
+
+    assert checkpoint_path(cfg, env="dev") != schema_location(cfg, env="dev")
 
 
 def test_checkpoint_path_is_keyed_by_target_table_name():
     """A different target table must get a different checkpoint -- otherwise
     two Auto Loader pipelines sharing a source directory would corrupt each
     other's state."""
-    cfg_a = {
-        "path": "/Volumes/cat/raw/raw_volume/chunks/chunk3.json",
-        "target_table": "cat.bronze.table_a",
-    }
+    cfg_a = {"target_table": "cat.bronze.table_a"}
     cfg_b = {**cfg_a, "target_table": "cat.bronze.table_b"}
 
-    assert checkpoint_path(cfg_a) != checkpoint_path(cfg_b)
-    assert checkpoint_path(cfg_a).endswith("/table_a")
-    assert checkpoint_path(cfg_b).endswith("/table_b")
+    assert checkpoint_path(cfg_a, env="dev") != checkpoint_path(cfg_b, env="dev")
+    assert "/table_a/" in checkpoint_path(cfg_a, env="dev")
+    assert "/table_b/" in checkpoint_path(cfg_b, env="dev")
 
 
 def test_chunk3_json_still_lives_in_the_shared_chunks_folder():
