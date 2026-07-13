@@ -28,39 +28,55 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from common.audit import add_audit_columns
-from common.config_loader import get_source_config, get_source_schema
+from common.config_loader import get_env_config, get_source_config, get_source_schema
 
 
-def checkpoint_path(cfg: Dict[str, Any]) -> str:
-    """Checkpoint lives under the same raw_volume as the source data, in a
-    dedicated _checkpoints/<table> folder -- keeps every pipeline's state
-    inside the one Volume rather than scattering paths across the workspace."""
-    source_dir = cfg["path"].rsplit("/", 1)[0]  # .../raw_volume/chunks
-    volume_root = source_dir.rsplit("/", 1)[0]  # .../raw_volume
+def _checkpoint_root(cfg: Dict[str, Any], env: str = "dev") -> str:
+    """Lives in the dedicated ops schema/volume (see resources/catalog.yml),
+    not the raw landing Volume -- a streaming checkpoint is pipeline
+    operational state, not data, so it shouldn't be nested inside the raw
+    zone (Unity Catalog also disallows nesting it under the target table's
+    own storage). Keyed by target table name so two Auto Loader pipelines
+    never share state."""
+    catalog = cfg["target_table"].split(".")[0]
+    ops_schema = get_env_config(env)["ops_schema"]
     table_name = cfg["target_table"].rsplit(".", 1)[-1]
-    return f"{volume_root}/_checkpoints/{table_name}"
+    return f"/Volumes/{catalog}/{ops_schema}/checkpoints_volume/{table_name}"
 
 
-def build_autoloader_options(cfg: Dict[str, Any], checkpoint: str) -> Dict[str, str]:
+def checkpoint_path(cfg: Dict[str, Any], env: str = "dev") -> str:
+    return f"{_checkpoint_root(cfg, env)}/checkpoint"
+
+
+def schema_location(cfg: Dict[str, Any], env: str = "dev") -> str:
+    """Deliberately a different path from checkpoint_path() -- per Databricks'
+    own guidance, conflating checkpointLocation and cloudFiles.schemaLocation
+    makes it impossible to clear schema-evolution state without also
+    discarding the checkpoint's exactly-once processing history."""
+    return f"{_checkpoint_root(cfg, env)}/schema"
+
+
+def build_autoloader_options(cfg: Dict[str, Any], schema_loc: str) -> Dict[str, str]:
     """Pure construction, no Spark session needed -- kept separate from
     run_autoloader() so the options dict is unit-testable on its own."""
     return {
         "cloudFiles.format": cfg["format"],
-        "cloudFiles.schemaLocation": checkpoint,
+        "cloudFiles.schemaLocation": schema_loc,
     }
 
 
 def run_autoloader(spark, source_key: str, env: str = "dev") -> Dict[str, Any]:
     cfg = get_source_config(source_key, env=env)
     source_file = cfg["path"].rsplit("/", 1)[-1]
-    checkpoint = checkpoint_path(cfg)
+    checkpoint = checkpoint_path(cfg, env)
+    schema_loc = schema_location(cfg, env)
 
     # Explicit, permissive (string-typed) schema -- see config/schemas.py.
-    # cloudFiles.schemaLocation (set in build_autoloader_options) still tracks
-    # schema evolution/rescue *beyond* this base schema -- that's a different
-    # concern from inference and is still worth keeping alongside it.
+    # cloudFiles.schemaLocation still tracks schema evolution/rescue *beyond*
+    # this base schema -- that's a different concern from inference and is
+    # still worth keeping alongside it.
     stream_reader = spark.readStream.format("cloudFiles").schema(get_source_schema(source_key))
-    for key, value in build_autoloader_options(cfg, checkpoint).items():
+    for key, value in build_autoloader_options(cfg, schema_loc).items():
         stream_reader = stream_reader.option(key, value)
     # .load() is given the exact file path (cfg["path"]), not the parent
     # chunks/ directory -- see module docstring for why.

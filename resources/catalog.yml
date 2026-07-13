@@ -28,6 +28,11 @@ resources:
       catalog_name: ${var.catalog}
       comment: Pipeline run logs written by src/common/logger.py.
 
+    ops_schema:
+      name: ops
+      catalog_name: ${var.catalog}
+      comment: Pipeline operational state (streaming checkpoints, schema tracking) -- decoupled from raw (data), bronze/silver/gold (data), and audit (human-queryable logs).
+
   volumes:
     raw_volume:
       name: raw_volume
@@ -35,3 +40,10 @@ resources:
       schema_name: ${resources.schemas.raw_schema.name}
       volume_type: MANAGED
       comment: Landing zone for the 5 raw source files, downloaded directly from Kaggle via src/notebooks/00_download_raw_data.py.
+
+    checkpoints_volume:
+      name: checkpoints_volume
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.ops_schema.name}
+      volume_type: MANAGED
+      comment: Streaming checkpoints and schema-tracking state (Auto Loader etc.) -- kept out of the raw landing zone since this is pipeline metadata, not data.
