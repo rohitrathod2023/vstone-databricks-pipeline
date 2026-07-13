@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from common.audit import add_audit_columns
-from common.config_loader import get_source_config
+from common.config_loader import get_source_config, get_source_schema
 
 
 def checkpoint_path(cfg: Dict[str, Any]) -> str:
@@ -55,7 +55,11 @@ def run_autoloader(spark, source_key: str, env: str = "dev") -> Dict[str, Any]:
     source_file = cfg["path"].rsplit("/", 1)[-1]
     checkpoint = checkpoint_path(cfg)
 
-    stream_reader = spark.readStream.format("cloudFiles")
+    # Explicit, permissive (string-typed) schema -- see config/schemas.py.
+    # cloudFiles.schemaLocation (set in build_autoloader_options) still tracks
+    # schema evolution/rescue *beyond* this base schema -- that's a different
+    # concern from inference and is still worth keeping alongside it.
+    stream_reader = spark.readStream.format("cloudFiles").schema(get_source_schema(source_key))
     for key, value in build_autoloader_options(cfg, checkpoint).items():
         stream_reader = stream_reader.option(key, value)
     # .load() is given the exact file path (cfg["path"]), not the parent

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from common.config_loader import get_source_config
+from common.config_loader import get_source_config, get_source_schema
 from common.logger import current_run_id
 
 _AUDIT_COLUMNS = ("load_dt", "source_format", "source_file", "run_id")
@@ -35,28 +35,30 @@ def _select_clause(cfg: Dict[str, Any]) -> str:
     return "*"
 
 
-def build_create_table_sql(cfg: Dict[str, Any]) -> str:
+def build_create_table_sql(cfg: Dict[str, Any], source_key: str) -> str:
     """COPY INTO requires its target table to already exist (confirmed against
-    a real Databricks SQL warehouse -- it does NOT auto-create one). This
-    creates it empty, via a zero-row CTAS, so the table's schema exactly
-    matches what the COPY INTO SELECT below will insert (including audit
-    columns) -- no schema drift between the two statements. IF NOT EXISTS
-    makes this a no-op on every run after the first."""
+    a real Databricks SQL warehouse -- it does NOT auto-create one). Unlike
+    the earlier zero-row-CTAS-over-read_files approach (which let the target
+    table's shape get inferred from the source), every source column here is
+    declared STRING explicitly -- deliberately permissive per Databricks' own
+    medallion architecture guidance: Bronze stays loosely typed so an
+    unexpected value in the source never breaks raw ingestion; strict typing
+    is Silver's job (Day 4-5). Audit columns keep their own already-correct,
+    non-inferred types (load_dt is a real TIMESTAMP; the rest are STRING).
+    IF NOT EXISTS makes this a no-op on every run after the first."""
     target_table = cfg["target_table"]
-    source_path = cfg["path"]
-    source_format = cfg["format"]
-    source_file = source_path.rsplit("/", 1)[-1]
+    schema = get_source_schema(source_key)
+    column_defs = ",\n            ".join(f"{f.name} STRING" for f in schema.fields)
 
     return f"""
-        CREATE TABLE IF NOT EXISTS {target_table}
+        CREATE TABLE IF NOT EXISTS {target_table} (
+            {column_defs},
+            load_dt TIMESTAMP,
+            source_format STRING,
+            source_file STRING,
+            run_id STRING
+        )
         USING DELTA
-        AS SELECT {_select_clause(cfg)},
-                  current_timestamp() AS load_dt,
-                  '{source_format}' AS source_format,
-                  '{source_file}' AS source_file,
-                  '' AS run_id
-           FROM read_files('{source_path}', format => '{source_format}', header => true, inferSchema => true)
-           WHERE 1 = 0
     """.strip()
 
 
@@ -79,7 +81,7 @@ def build_copy_into_sql(cfg: Dict[str, Any], run_id: str) -> str:
             FROM '{source_path}'
         )
         FILEFORMAT = CSV
-        FORMAT_OPTIONS ('header' = 'true', 'inferSchema' = 'true', 'mergeSchema' = 'true')
+        FORMAT_OPTIONS ('header' = 'true', 'mergeSchema' = 'true')
         COPY_OPTIONS ('mergeSchema' = 'true')
     """.strip()
 
@@ -91,7 +93,7 @@ def run_copy_into(spark, source_key: str, env: str = "dev") -> Dict[str, Any]:
     cfg = get_source_config(source_key, env=env)
     run_id = current_run_id()
 
-    spark.sql(build_create_table_sql(cfg))
+    spark.sql(build_create_table_sql(cfg, source_key))
     spark.sql(build_copy_into_sql(cfg, run_id))
     row_count = spark.table(cfg["target_table"]).count()
 

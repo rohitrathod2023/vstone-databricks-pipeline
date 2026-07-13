@@ -81,7 +81,7 @@ def test_split_is_chronological_and_covers_all_rows(spark, synthetic_cars_df, mo
             "target_table": "vstone_traffic_dev.bronze.traffic_counts",
         }
 
-    def fake_read_source(spark_, cfg):
+    def fake_read_source(spark_, cfg, **kw):
         return synthetic_cars_df
 
     def fake_write_source(df, cfg, mode="overwrite", **kw):
@@ -129,7 +129,7 @@ def test_split_is_idempotent(spark, synthetic_cars_df, monkeypatch):
         }
 
     monkeypatch.setattr(chunking_mod, "get_source_config", fake_get_source_config)
-    monkeypatch.setattr(chunking_mod, "read_source", lambda s, c: synthetic_cars_df)
+    monkeypatch.setattr(chunking_mod, "read_source", lambda s, c, **kw: synthetic_cars_df)
     monkeypatch.setattr(
         chunking_mod,
         "write_source",
@@ -195,7 +195,7 @@ def test_run_skips_when_already_complete_and_not_forced(spark, synthetic_cars_df
     monkeypatch.setattr(chunking_mod, "chunking_already_complete", lambda env: True)
     monkeypatch.setattr(chunking_mod, "mark_chunking_complete", lambda env: None)
     monkeypatch.setattr(chunking_mod, "get_source_config", _fake_source_config)
-    monkeypatch.setattr(chunking_mod, "read_source", lambda s, c: synthetic_cars_df)
+    monkeypatch.setattr(chunking_mod, "read_source", lambda s, c, **kw: synthetic_cars_df)
     monkeypatch.setattr(chunking_mod, "write_source", lambda *a, **kw: write_calls.append(a))
 
     results = chunking_mod.run(spark, env="dev", force=False)
@@ -213,7 +213,7 @@ def test_run_force_bypasses_skip_even_when_already_complete(spark, synthetic_car
     monkeypatch.setattr(chunking_mod, "chunking_already_complete", lambda env: True)
     monkeypatch.setattr(chunking_mod, "mark_chunking_complete", lambda env: marked.append(env))
     monkeypatch.setattr(chunking_mod, "get_source_config", _fake_source_config)
-    monkeypatch.setattr(chunking_mod, "read_source", lambda s, c: synthetic_cars_df)
+    monkeypatch.setattr(chunking_mod, "read_source", lambda s, c, **kw: synthetic_cars_df)
     monkeypatch.setattr(
         chunking_mod, "write_source", lambda df, cfg, mode="overwrite", **kw: write_calls.append(cfg["path"])
     )
