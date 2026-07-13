@@ -13,9 +13,12 @@ Two things happen on every call:
   1. A standard Python logger writes to stdout — this is what shows up in the
      Databricks job run UI automatically, no extra setup needed.
   2. (Optional, on by default) the same event is appended as a row to
-     `<catalog>.audit.pipeline_logs` — a Delta table — so the "Audit &
+     `<catalog>.<audit_schema>.pipeline_logs` — a Delta table — so the "Audit &
      Observability Layer" in the architecture diagram is a real, queryable
      thing you can demo on Day 4 / Day 10, not just a box on a picture.
+     audit_schema is resolved per-environment via config_loader/env.yml (same
+     as raw_schema/bronze_schema), not hardcoded, since mode: development
+     prefixes it too (e.g. dev_<user>_audit).
 
 Delta writes are best-effort: if the audit table/schema doesn't exist yet
 (e.g. very first run before Bronze setup) or Spark isn't available (e.g.
@@ -51,7 +54,23 @@ class _DeltaAuditHandler(logging.Handler):
         self.run_id = _RUN_ID
         self._spark = spark
         self._disabled = False
-        self._table = f"`{catalog}`.audit.pipeline_logs"
+        self._table = self._resolve_table(catalog)
+
+    @staticmethod
+    def _resolve_table(catalog: str) -> str:
+        """audit_schema is prefixed per-environment the same way raw_schema/
+        bronze_schema are under mode: development (e.g. dev_<user>_audit) --
+        a hardcoded "audit" would only ever be correct in test/prod (mode:
+        production, unprefixed) and silently no-op every write in dev, since
+        that schema wouldn't exist under the literal name. Falls back to the
+        literal "audit" if env.yml can't be loaded (e.g. this handler is used
+        outside this repo's config structure) rather than raising."""
+        try:
+            from common.config_loader import get_env_config
+            audit_schema = get_env_config()["audit_schema"]
+        except Exception:  # noqa: BLE001 - resolution must never break logging
+            audit_schema = "audit"
+        return f"`{catalog}`.{audit_schema}.pipeline_logs"
 
     def _get_spark(self):
         if self._spark is not None:

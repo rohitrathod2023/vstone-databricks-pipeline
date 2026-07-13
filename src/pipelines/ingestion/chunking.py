@@ -14,6 +14,13 @@ Idempotent / safe to re-run (the brief requires this explicitly):
   - The split itself is deterministic: row count comes from a full ORDER BY date,
     monotonically increasing id via row_number(), so the same input always
     produces the same 4 slices regardless of how many times this runs.
+  - Skip-based on top of that (force=False by default): a re-run with nothing
+    changed doesn't re-sort/re-window all 24.6M rows of cars.csv just to
+    rewrite the same output — it checks a completion marker and returns the
+    existing row counts instead. Mirrors COPY INTO's own default-skip/
+    force-reprocess behavior (see pipelines/bronze/copy_into.py) and the
+    download notebook's existing force parameter, so the same idempotency
+    philosophy holds across the whole Day 1-3 pipeline.
 
 Called from src/notebooks/01_data_chunking.py, which is the thin Databricks
 Job entrypoint — all real logic lives here so it's unit-testable without a
@@ -21,10 +28,12 @@ running job (see tests/unit/test_chunking.py).
 """
 from __future__ import annotations
 
+import os
+
 from common.audit import add_audit_columns
 from common.config_loader import get_source_config
 from common.io_readers import read_source, write_source
-from common.logger import get_logger
+from common.logger import current_run_id, get_logger
 
 # (pct_of_total, target_source_key) in chronological order — earliest slice first.
 # Percentages must sum to 100; enforced by _validate_split() below.
@@ -42,12 +51,49 @@ def _validate_split():
         raise ValueError(f"CHUNK_PLAN percentages must sum to 100, got {total}")
 
 
-def run(spark, env: str = "dev") -> dict:
+_COMPLETION_MARKER_NAME = "_chunking_complete"
+
+
+def _completion_marker_path(env: str) -> str:
+    """All 4 chunks share one parent directory -- derive it from chunk1_csv's
+    config rather than hardcoding "chunks/" a second time here."""
+    chunks_dir = get_source_config("chunk1_csv", env=env)["path"].rsplit("/", 1)[0]
+    return f"{chunks_dir}/{_COMPLETION_MARKER_NAME}"
+
+
+def chunking_already_complete(env: str = "dev") -> bool:
+    """True only if a prior run finished writing all 4 chunks. Checks the
+    completion marker specifically (written last, only after every chunk
+    succeeds) rather than "do the chunk files exist" -- a run that crashed
+    partway through writing would leave a partial file that looks "done" to
+    a bare existence check, silently leaving bad data in place."""
+    return os.path.exists(_completion_marker_path(env))
+
+
+def mark_chunking_complete(env: str) -> None:
+    with open(_completion_marker_path(env), "w") as f:
+        f.write(f"run_id={current_run_id()}\n")
+
+
+def run(spark, env: str = "dev", force: bool = False) -> dict:
     """Runs the full chunking pipeline for the given environment. Returns a dict of
-    {chunk_key: row_count} for logging/testing/verification."""
+    {chunk_key: row_count} for logging/testing/verification.
+
+    force=False (default) skips the actual split/write if chunking_already_complete()
+    is True, returning the existing chunks' row counts instead -- pass force=True
+    to reprocess cars.csv regardless of what's already there."""
     _validate_split()
     catalog = get_source_config("chunk1_csv", env=env)["target_table"].split(".")[0]
     log = get_logger(__name__, catalog=catalog, job_name="Data Chunking")
+
+    if not force and chunking_already_complete(env):
+        log.info("Chunks already present and complete — skipping (pass force=True to redo)")
+        results = {
+            chunk_key: read_source(spark, get_source_config(chunk_key, env=env)).count()
+            for _, chunk_key in CHUNK_PLAN
+        }
+        log.info(f"Existing chunk row counts: {results}")
+        return results
 
     log.info("Reading raw_cars from Volumes")
     raw_cfg = get_source_config("raw_cars", env=env)
@@ -88,6 +134,7 @@ def run(spark, env: str = "dev") -> dict:
         results[chunk_key] = row_count
 
     log.info(f"Chunking complete: {results}")
+    mark_chunking_complete(env)
     return results
 
 

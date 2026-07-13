@@ -90,6 +90,11 @@ def test_split_is_chronological_and_covers_all_rows(spark, synthetic_cars_df, mo
     monkeypatch.setattr(chunking_mod, "get_source_config", fake_get_source_config)
     monkeypatch.setattr(chunking_mod, "read_source", fake_read_source)
     monkeypatch.setattr(chunking_mod, "write_source", fake_write_source)
+    # This test is about split correctness, not the skip-check feature -- bypass
+    # the real marker check so it can't be polluted by (or pollute) a real file
+    # left behind at the fake "/tmp/..." path by another test/run.
+    monkeypatch.setattr(chunking_mod, "chunking_already_complete", lambda env: False)
+    monkeypatch.setattr(chunking_mod, "mark_chunking_complete", lambda env: None)
 
     results = chunking_mod.run(spark, env="dev")
 
@@ -130,6 +135,11 @@ def test_split_is_idempotent(spark, synthetic_cars_df, monkeypatch):
         "write_source",
         lambda df, cfg, mode="overwrite", **kw: writes.append((cfg["path"], sorted(r["id"] for r in df.collect()))),
     )
+    # This test is about mode="overwrite" idempotency specifically, not the
+    # skip-check feature (covered separately below) -- bypass the real marker
+    # check so both calls actually redo the write and can be compared.
+    monkeypatch.setattr(chunking_mod, "chunking_already_complete", lambda env: False)
+    monkeypatch.setattr(chunking_mod, "mark_chunking_complete", lambda env: None)
 
     chunking_mod.run(spark, env="dev")
     first_run = list(writes)
@@ -138,3 +148,78 @@ def test_split_is_idempotent(spark, synthetic_cars_df, monkeypatch):
     second_run = list(writes)
 
     assert first_run == second_run
+
+
+def test_chunking_already_complete_reflects_marker_presence(tmp_path, monkeypatch):
+    import pipelines.ingestion.chunking as chunking_mod
+
+    # Real Volume paths are always forward-slash (/Volumes/...), which is what
+    # _completion_marker_path()'s rsplit("/", 1) expects -- .as_posix() keeps
+    # this test's fake path consistent with that even on Windows, where
+    # tmp_path would otherwise return a backslash-separated path.
+    chunk1_path = (tmp_path / "chunk1.csv").as_posix()
+    monkeypatch.setattr(chunking_mod, "get_source_config", lambda key, env="dev": {"path": chunk1_path})
+
+    assert chunking_mod.chunking_already_complete(env="dev") is False
+
+    chunking_mod.mark_chunking_complete(env="dev")
+
+    assert chunking_mod.chunking_already_complete(env="dev") is True
+
+
+def test_partial_output_without_marker_is_not_treated_as_complete(tmp_path, monkeypatch):
+    """A crash partway through writing must not be mistaken for "done" -- the
+    marker (not bare chunk-file existence) is what's checked."""
+    import pipelines.ingestion.chunking as chunking_mod
+
+    chunk1_path = (tmp_path / "chunk1.csv").as_posix()
+    monkeypatch.setattr(chunking_mod, "get_source_config", lambda key, env="dev": {"path": chunk1_path})
+    (tmp_path / "chunk1.csv").write_text("partial, garbage")
+
+    assert chunking_mod.chunking_already_complete(env="dev") is False
+
+
+def _fake_source_config(key, env="dev"):
+    return {
+        "path": f"/tmp/{key}",
+        "format": "csv" if "csv" in key or key == "raw_cars" else ("json" if "json" in key else "xml"),
+        "target_table": "vstone_traffic_dev.bronze.traffic_counts",
+    }
+
+
+def test_run_skips_when_already_complete_and_not_forced(spark, synthetic_cars_df, monkeypatch):
+    import pipelines.ingestion.chunking as chunking_mod
+
+    write_calls = []
+
+    monkeypatch.setattr(chunking_mod, "chunking_already_complete", lambda env: True)
+    monkeypatch.setattr(chunking_mod, "mark_chunking_complete", lambda env: None)
+    monkeypatch.setattr(chunking_mod, "get_source_config", _fake_source_config)
+    monkeypatch.setattr(chunking_mod, "read_source", lambda s, c: synthetic_cars_df)
+    monkeypatch.setattr(chunking_mod, "write_source", lambda *a, **kw: write_calls.append(a))
+
+    results = chunking_mod.run(spark, env="dev", force=False)
+
+    assert write_calls == []
+    assert results == {"chunk1_csv": 100, "chunk2_csv": 100, "chunk3_json": 100, "chunk4_xml": 100}
+
+
+def test_run_force_bypasses_skip_even_when_already_complete(spark, synthetic_cars_df, monkeypatch):
+    import pipelines.ingestion.chunking as chunking_mod
+
+    write_calls = []
+    marked = []
+
+    monkeypatch.setattr(chunking_mod, "chunking_already_complete", lambda env: True)
+    monkeypatch.setattr(chunking_mod, "mark_chunking_complete", lambda env: marked.append(env))
+    monkeypatch.setattr(chunking_mod, "get_source_config", _fake_source_config)
+    monkeypatch.setattr(chunking_mod, "read_source", lambda s, c: synthetic_cars_df)
+    monkeypatch.setattr(
+        chunking_mod, "write_source", lambda df, cfg, mode="overwrite", **kw: write_calls.append(cfg["path"])
+    )
+
+    results = chunking_mod.run(spark, env="dev", force=True)
+
+    assert len(write_calls) == 4
+    assert marked == ["dev"]
+    assert sum(results.values()) == 100

@@ -22,9 +22,11 @@ if SRC_DIR not in sys.path:
 
 dbutils.widgets.text("catalog", "vstone_traffic_dev", "Catalog")
 dbutils.widgets.text("env", "dev", "Environment (dev/test/prod)")
+dbutils.widgets.dropdown("force", "false", ["false", "true"], "Reprocess even if chunks already exist")
 
 catalog = dbutils.widgets.get("catalog")
 env = dbutils.widgets.get("env")
+force = dbutils.widgets.get("force") == "true"
 
 # COMMAND ----------
 
@@ -32,11 +34,11 @@ from pipelines.ingestion.chunking import run
 from common.logger import get_logger
 
 log = get_logger(__name__, catalog=catalog, job_name="Data Chunking")
-log.info(f"Starting Data Chunking job — env={env}, catalog={catalog}")
+log.info(f"Starting Data Chunking job — env={env}, catalog={catalog}, force={force}")
 
 # COMMAND ----------
 
-results = run(spark, env=env)
+results = run(spark, env=env, force=force)
 log.info(f"Data Chunking job finished successfully: {results}")
 
 # COMMAND ----------
