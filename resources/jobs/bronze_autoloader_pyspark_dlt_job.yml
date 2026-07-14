@@ -39,6 +39,7 @@ resources:
               source_key: chunk4_xml
               catalog: ${var.catalog}
               env: ${bundle.target}
+              force: "false"
 
         - task_key: dlt_chunk2_csv
           pipeline_task:
