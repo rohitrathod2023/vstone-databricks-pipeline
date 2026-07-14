@@ -22,10 +22,12 @@ if SRC_DIR not in sys.path:
 dbutils.widgets.text("source_key", "chunk4_xml", "Source key (see sources.yml)")
 dbutils.widgets.text("catalog", "vstone_traffic_dev", "Catalog")
 dbutils.widgets.text("env", "dev", "Environment (dev/test/prod)")
+dbutils.widgets.dropdown("force", "false", ["false", "true"], "Reprocess even if the source file hasn't changed")
 
 source_key = dbutils.widgets.get("source_key")
 catalog = dbutils.widgets.get("catalog")
 env = dbutils.widgets.get("env")
+force = dbutils.widgets.get("force") == "true"
 
 # COMMAND ----------
 
@@ -41,7 +43,7 @@ log.info(f"Starting PySpark XML read/write — source_key={source_key}, env={env
 # COMMAND ----------
 
 cfg = get_source_config(source_key, env=env)
-result = run_pyspark_xml(spark, source_key, env=env)
+result = run_pyspark_xml(spark, source_key, env=env, force=force)
 log.info(f"Loaded into {result['target_table']}: {result['row_count']} rows")
 
 # COMMAND ----------
