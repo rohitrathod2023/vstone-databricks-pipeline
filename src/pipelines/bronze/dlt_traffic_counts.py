@@ -11,6 +11,19 @@
 # MAGIC Catalog/target schema are set at the pipeline level (see
 # MAGIC `resources/pipelines/bronze_dlt_pipeline.yml`), not in this file — DLT
 # MAGIC tables are declared with their bare name only.
+# MAGIC
+# MAGIC **Streaming table, not a materialized view.** A `@dlt.table` function
+# MAGIC that does a plain `spark.read` becomes a materialized view (DLT fully
+# MAGIC recomputes it from scratch every run) -- Databricks' own documented
+# MAGIC guidance is that Bronze should be a streaming table instead (append-only,
+# MAGIC incremental), with materialized views reserved for Silver/Gold
+# MAGIC transformations. The read below uses `spark.readStream.format("cloudFiles")`
+# MAGIC specifically so this table is a genuine streaming table. Lakeflow
+# MAGIC pipelines manage the Auto Loader schema/checkpoint location automatically
+# MAGIC under the pipeline's own storage root -- no `cloudFiles.schemaLocation`
+# MAGIC or checkpoint option is set here, unlike the standalone Auto Loader
+# MAGIC module (`autoloader_ingest.py`), which isn't running inside a pipeline
+# MAGIC and has to manage that itself.
 
 # COMMAND ----------
 
@@ -44,9 +57,21 @@ _SOURCE_FILE = _CFG["path"].rsplit("/", 1)[-1]
 @dlt.expect("non_null_enter_exit", "enter IS NOT NULL AND exit IS NOT NULL")
 @dlt.expect("non_null_date", "date IS NOT NULL")
 def traffic_counts_dlt():
+    # cloudFiles (Auto Loader), not a plain spark.read -- this is what makes
+    # DLT treat traffic_counts_dlt as a streaming table instead of a
+    # materialized view. .load() is given the exact file path, not the
+    # shared chunks/ folder, same reasoning as autoloader_ingest.py: avoids
+    # picking up chunk1.csv/chunk3.json/chunk4.xml as siblings.
+    #
     # Explicit, permissive (string-typed) schema -- see config/schemas.py.
     # Strict typing/validation is deferred to Silver, not done at Bronze.
-    df = spark.read.option("header", "true").schema(get_source_schema("chunk2_csv")).csv(_CFG["path"])
+    df = (
+        spark.readStream.format("cloudFiles")
+        .option("cloudFiles.format", _CFG["format"])
+        .option("header", "true")
+        .schema(get_source_schema("chunk2_csv"))
+        .load(_CFG["path"])
+    )
     # chunk2_csv already carries its own audit columns from chunking.py --
     # withColumn() overwrites same-named columns (see autoloader_ingest.py's
     # note), so this safely re-tags with Bronze's own load event.
