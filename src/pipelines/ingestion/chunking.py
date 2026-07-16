@@ -30,10 +30,10 @@ from __future__ import annotations
 
 import os
 
-from common.audit import add_audit_columns
-from common.config_loader import get_source_config, get_source_schema
-from common.io_readers import read_source, write_source
-from common.logger import current_run_id, get_logger
+from utils.audit import add_audit_columns
+from utils.config_loader import get_source_config, get_source_schema
+from utils.io_readers import read_source, write_source
+from utils.logger import current_run_id, get_logger
 
 # (pct_of_total, target_source_key) in chronological order — earliest slice first.
 # Percentages must sum to 100; enforced by _validate_split() below.

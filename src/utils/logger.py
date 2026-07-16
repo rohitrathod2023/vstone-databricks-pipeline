@@ -3,7 +3,7 @@ Custom logger for the VStone traffic-simulator pipeline.
 
 Every notebook / module in this repo gets its logger the same way:
 
-    from common.logger import get_logger
+    from utils.logger import get_logger
     log = get_logger(__name__, catalog="vstone_traffic_dev", job_name="Data Chunking")
 
     log.info("starting chunk split")
@@ -66,7 +66,7 @@ class _DeltaAuditHandler(logging.Handler):
         literal "audit" if env.yml can't be loaded (e.g. this handler is used
         outside this repo's config structure) rather than raising."""
         try:
-            from common.config_loader import get_env_config
+            from utils.config_loader import get_env_config
             audit_schema = get_env_config()["audit_schema"]
         except Exception:  # noqa: BLE001 - resolution must never break logging
             audit_schema = "audit"

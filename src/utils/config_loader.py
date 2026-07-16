@@ -4,7 +4,7 @@ placeholders for the active environment — the one thing every ingestion
 call needs, resolved in one place instead of re-derived per notebook.
 
 Usage:
-    from common.config_loader import get_source_config, get_env_config
+    from utils.config_loader import get_source_config, get_env_config
 
     env = get_env_config("dev")                     # {'catalog': 'vstone_traffic_dev', ...}
     src = get_source_config("chunk1_csv", env="dev")  # path/format/technique with ${catalog} resolved

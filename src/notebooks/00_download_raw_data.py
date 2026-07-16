@@ -41,7 +41,7 @@ SRC_DIR = os.path.join(REPO_ROOT, "src")
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-from common.config_loader import get_env_config  # noqa: E402
+from utils.config_loader import get_env_config  # noqa: E402
 
 # COMMAND ----------
 
@@ -73,7 +73,7 @@ os.makedirs(volume_root, exist_ok=True)
 
 # COMMAND ----------
 
-from common.logger import get_logger  # noqa: E402
+from utils.logger import get_logger  # noqa: E402
 
 log = get_logger(__name__, catalog=catalog, job_name="Download Raw Data")
 log.info(f"Target: {volume_root}")

@@ -31,7 +31,7 @@ force = dbutils.widgets.get("force") == "true"
 # COMMAND ----------
 
 from pipelines.ingestion.chunking import run
-from common.logger import get_logger
+from utils.logger import get_logger
 
 log = get_logger(__name__, catalog=catalog, job_name="Data Chunking")
 log.info(f"Starting Data Chunking job — env={env}, catalog={catalog}, force={force}")

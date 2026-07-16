@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from common.config_loader import get_source_config, get_source_schema
-from common.logger import current_run_id
+from utils.config_loader import get_source_config, get_source_schema
+from utils.logger import current_run_id
 
 _AUDIT_COLUMNS = ("load_dt", "source_format", "source_file", "run_id")
 

@@ -1,5 +1,5 @@
 """
-Unit tests for common.io_readers -- confirms an explicit schema passed to
+Unit tests for utils.io_readers -- confirms an explicit schema passed to
 read_csv/read_json actually produces the expected string-typed DataFrame
 schema (not just that the code compiles). Uses a local PySpark session and
 real, tiny on-disk fixture files -- no Databricks cluster needed.
@@ -26,7 +26,7 @@ if str(SRC_DIR) not in sys.path:
 
 from pyspark.sql.types import StringType  # noqa: E402
 
-from common.io_readers import read_csv, read_json  # noqa: E402
+from utils.io_readers import read_csv, read_json  # noqa: E402
 from config.schemas import CARS_SCHEMA  # noqa: E402
 
 

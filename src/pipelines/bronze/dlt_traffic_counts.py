@@ -2,11 +2,11 @@
 # MAGIC %md
 # MAGIC # Bronze DLT — chunk2_csv -> traffic_counts_dlt
 # MAGIC DLT's own `@dlt.expect` is the native data-quality mechanism for this
-# MAGIC technique — `common.sanity_checks.run_sanity_check` (used by every other
+# MAGIC technique — `utils.sanity_checks.run_sanity_check` (used by every other
 # MAGIC Bronze pipeline) is deliberately NOT used here, since bolting an
 # MAGIC imperative check onto a declarative `@dlt.table` function would fight
 # MAGIC the framework rather than use its own DQ tooling. Table comments still
-# MAGIC come from `common.metadata`'s config-driven pattern via `comment=`.
+# MAGIC come from `utils.metadata`'s config-driven pattern via `comment=`.
 # MAGIC
 # MAGIC Catalog/target schema are set at the pipeline level (see
 # MAGIC `resources/pipelines/bronze_dlt_pipeline.yml`), not in this file — DLT
@@ -40,8 +40,8 @@ if SRC_DIR not in sys.path:
 
 import dlt  # noqa: E402
 
-from common.audit import add_audit_columns  # noqa: E402
-from common.config_loader import get_source_config, get_source_schema  # noqa: E402
+from utils.audit import add_audit_columns  # noqa: E402
+from utils.config_loader import get_source_config, get_source_schema  # noqa: E402
 
 _ENV = spark.conf.get("env", "dev")
 _CFG = get_source_config("chunk2_csv", env=_ENV)

@@ -2,7 +2,7 @@
 Audit columns, applied the same way to every table in every layer
 (Bronze/Silver/Gold) per the capstone's mandatory requirement.
 
-    from common.audit import add_audit_columns
+    from utils.audit import add_audit_columns
     df = add_audit_columns(df, source_format="csv", source_file="chunk1.csv")
 
 Adds:
@@ -10,12 +10,12 @@ Adds:
     source_format   — csv / json / xml / delta ...
     source_file     — original file/path this row came from
     run_id          — ties every row back to the pipeline run that wrote it
-                      (see common.logger.current_run_id) — makes MERGE INTO /
+                      (see utils.logger.current_run_id) — makes MERGE INTO /
                       late-arriving-data debugging traceable on Day 7
 """
 from __future__ import annotations
 
-from common.logger import current_run_id
+from utils.logger import current_run_id
 
 
 def add_audit_columns(df, source_format: str, source_file: str):

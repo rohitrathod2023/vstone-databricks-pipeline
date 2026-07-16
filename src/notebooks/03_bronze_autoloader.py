@@ -29,10 +29,10 @@ env = dbutils.widgets.get("env")
 
 # COMMAND ----------
 
-from common.config_loader import get_source_config
-from common.logger import get_logger
-from common.metadata import apply_table_comments
-from common.sanity_checks import run_sanity_check
+from utils.config_loader import get_source_config
+from utils.logger import get_logger
+from utils.metadata import apply_table_comments
+from utils.sanity_checks import run_sanity_check
 from pipelines.bronze.autoloader_ingest import run_autoloader
 
 log = get_logger(__name__, catalog=catalog, job_name="Bronze Auto Loader")

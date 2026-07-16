@@ -27,8 +27,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from common.audit import add_audit_columns
-from common.config_loader import get_env_config, get_source_config, get_source_schema
+from utils.audit import add_audit_columns
+from utils.config_loader import get_env_config, get_source_config, get_source_schema
 
 
 def _checkpoint_root(cfg: Dict[str, Any], env: str = "dev") -> str:

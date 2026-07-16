@@ -22,7 +22,7 @@ if str(SRC_DIR) not in sys.path:
 
 from pyspark.sql.types import StringType  # noqa: E402
 
-from common.config_loader import get_source_schema  # noqa: E402
+from utils.config_loader import get_source_schema  # noqa: E402
 from config.schemas import SCHEMAS  # noqa: E402
 
 

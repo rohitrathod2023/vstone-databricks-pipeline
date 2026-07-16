@@ -5,7 +5,7 @@ Adding a new format later (say Parquet) means adding one function + one
 registry entry here — every notebook and job that calls read_source() picks
 it up automatically, nothing else in the repo changes.
 
-    from common.io_readers import read_source
+    from utils.io_readers import read_source
     df = read_source(spark, source_config)   # source_config comes from config_loader.get_source_config(...)
 
 Day 1 only needs CSV/JSON/XML read paths to exist (chunking splits cars.csv,

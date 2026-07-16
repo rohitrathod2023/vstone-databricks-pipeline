@@ -26,7 +26,7 @@ resources:
     audit_schema:
       name: audit
       catalog_name: ${var.catalog}
-      comment: Pipeline run logs written by src/common/logger.py.
+      comment: Pipeline run logs written by src/utils/logger.py.
 
     ops_schema:
       name: ops

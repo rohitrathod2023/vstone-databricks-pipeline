@@ -77,7 +77,7 @@ def test_chunk3_json_still_lives_in_the_shared_chunks_folder():
     """Confirms sources.yml wasn't reverted back to a dedicated subfolder --
     the exact-path approach means chunk3.json never needed to move from Day
     1's original output location."""
-    from common.config_loader import get_source_config
+    from utils.config_loader import get_source_config
 
     cfg = get_source_config("chunk3_json", env="dev")
     assert cfg["path"].endswith("/chunks/chunk3.json")
@@ -89,7 +89,7 @@ def test_run_autoloader_would_apply_the_explicit_cars_schema():
     actual stream read -- it confirms the schema run_autoloader() passes to
     .schema(...) is the correct one instead (see test_io_readers.py for a real
     local read of the same schema against the JSON format cloudFiles wraps)."""
-    from common.config_loader import get_source_schema
+    from utils.config_loader import get_source_schema
     from config.schemas import CARS_SCHEMA
 
     assert get_source_schema("chunk3_json") is CARS_SCHEMA

@@ -1,5 +1,5 @@
 """
-Tests common.audit.add_audit_columns using the exact testing utilities the
+Tests utils.audit.add_audit_columns using the exact testing utilities the
 brief calls out by name (assertDataFrameEqual, assertSchemaEqual), since this
 function is shared by every layer (Bronze/Silver/Gold) — get it right once,
 here, and every day's ingestion code inherits a tested audit implementation.
@@ -35,7 +35,7 @@ def test_audit_columns_are_added_with_correct_schema(spark):
         StringType,
     )
 
-    from common.audit import add_audit_columns
+    from utils.audit import add_audit_columns
 
     df = spark.createDataFrame([(1,), (2,)], schema=StructType([StructField("enter", IntegerType())]))
     result = add_audit_columns(df, source_format="csv", source_file="chunk1.csv")
@@ -56,7 +56,7 @@ def test_audit_columns_values_are_constant_across_rows(spark):
     from pyspark.testing.utils import assertDataFrameEqual
     from pyspark.sql.types import StructType, StructField, IntegerType
 
-    from common.audit import add_audit_columns
+    from utils.audit import add_audit_columns
 
     df = spark.createDataFrame([(1,), (2,), (3,)], schema=StructType([StructField("enter", IntegerType())]))
     result = add_audit_columns(df, source_format="json", source_file="chunk3.json")

@@ -33,9 +33,9 @@ import os
 import re
 from typing import Any, Dict
 
-from common.audit import add_audit_columns
-from common.config_loader import get_env_config, get_source_config, get_source_schema
-from common.io_readers import read_xml
+from utils.audit import add_audit_columns
+from utils.config_loader import get_env_config, get_source_config, get_source_schema
+from utils.io_readers import read_xml
 
 _INVALID_COLUMN_CHARS = re.compile(r"[^0-9a-zA-Z_]")
 

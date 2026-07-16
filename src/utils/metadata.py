@@ -3,7 +3,7 @@ Config-driven table/column comments — every Bronze/Silver/Gold table gets its
 description from sources.yml (already there for every source) rather than a
 separate comments file, so there's one place to describe a dataset, not two.
 
-    from common.metadata import apply_table_comments
+    from utils.metadata import apply_table_comments
     apply_table_comments(spark, cfg["target_table"], cfg["description"])
 """
 from __future__ import annotations

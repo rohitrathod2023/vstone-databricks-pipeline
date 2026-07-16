@@ -5,7 +5,7 @@ isn't "done" until its target table has rows and its audit columns are
 actually populated (catches a silent all-NULL audit column just as much as
 a silent zero-row load).
 
-    from common.sanity_checks import run_sanity_check
+    from utils.sanity_checks import run_sanity_check
     result = run_sanity_check(spark, cfg["target_table"], catalog=catalog)
     if not result["passed"]:
         raise RuntimeError(result["failures"])
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from common.logger import get_logger
+from utils.logger import get_logger
 
 AUDIT_COLUMNS = ("load_dt", "source_format", "source_file", "run_id")
 

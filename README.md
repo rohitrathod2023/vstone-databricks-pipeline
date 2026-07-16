@@ -17,7 +17,7 @@ resources/jobs/*.yml         One file per Databricks Job, included by databricks
 src/
   notebooks/                 Thin Databricks Job entrypoints only — no real logic here
   pipelines/                 Actual pipeline logic, organized by layer (ingestion/, silver/, gold/ as they're added)
-  common/                    Shared, reusable code: logger.py, config_loader.py, audit.py, io_readers.py
+  utils/                     Shared, reusable code: logger.py, config_loader.py, audit.py, io_readers.py
   config/                    sources.yml (per-dataset config) + env.yml (per-environment config)
 tests/
   unit/                      pytest, runs in GitHub Actions on every PR — no Databricks cluster needed
@@ -31,16 +31,16 @@ docs/                        Requirement/assumptions doc, dataset profiling note
   table) is one entry in `src/config/sources.yml` — path, format, technique, target
   table. Notebooks call `generic_ingest("<key>")`-style functions; adding a new
   source is a config edit, not new code.
-- **One reusable ingestion path across formats.** `src/common/io_readers.py` is a
+- **One reusable ingestion path across formats.** `src/utils/io_readers.py` is a
   strategy-pattern dispatch (`READERS = {"csv": ..., "json": ..., "xml": ...}`) —
   the same `read_source()`/`write_source()` calls work for every format Day 1-3
   touches, and adding Parquet or another format later is one function + one
   registry entry.
-- **Every table gets the same audit columns.** `src/common/audit.py` adds
+- **Every table gets the same audit columns.** `src/utils/audit.py` adds
   `load_dt`, `source_format`, `source_file`, `run_id` identically in Bronze,
   Silver, and Gold — required by the brief, and it's what makes `run_id`
   traceable end-to-end for the Day 7 late-arriving-data / MERGE INTO work.
-- **Custom logger everywhere.** `src/common/logger.py` gives every module the
+- **Custom logger everywhere.** `src/utils/logger.py` gives every module the
   same `get_logger(__name__, catalog=...)` — logs to stdout (visible in the
   Databricks job run UI) and best-effort appends to
   `<catalog>.audit.pipeline_logs`, a real Delta table backing the "Audit &

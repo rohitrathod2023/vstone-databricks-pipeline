@@ -94,7 +94,7 @@ def test_same_source_key_resolves_to_different_schema_per_environment():
     """The exact thing that broke in Day 1 before schema-name parameterization
     was added: dev's schemas are prefixed (mode: development), test/prod's
     aren't -- config_loader must resolve each correctly, not just for dev."""
-    from common.config_loader import get_source_config
+    from utils.config_loader import get_source_config
 
     dev_cfg = get_source_config("chunk1_csv", env="dev")
     test_cfg = get_source_config("chunk1_csv", env="test")
@@ -110,7 +110,7 @@ def test_source_key_indirection_resolves_path_and_format():
     source_key: raw_streets to reuse another entry's path/format/description.
     This broke the first Day 2 job run (KeyError: 'path') before
     config_loader learned to resolve it."""
-    from common.config_loader import get_source_config
+    from utils.config_loader import get_source_config
 
     cfg = get_source_config("bronze_streets", env="dev")
     assert cfg["path"].endswith("streets.csv")
@@ -161,7 +161,7 @@ def test_the_4_chunks_target_separate_bronze_tables():
     """Bronze is the raw landing layer -- one table per source/technique is the
     correct grain. Reconciling the 4 chunks into one stream is Silver's job
     (Day 4-5), not something to force at Bronze."""
-    from common.config_loader import get_source_config
+    from utils.config_loader import get_source_config
 
     targets = {
         get_source_config(key, env="dev")["target_table"]
