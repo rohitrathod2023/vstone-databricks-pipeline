@@ -23,6 +23,11 @@ resources:
       catalog_name: ${var.catalog}
       comment: Bronze layer — first Delta tables, one layer above raw files.
 
+    silver_schema:
+      name: silver
+      catalog_name: ${var.catalog}
+      comment: Silver layer — cleaned, strictly-typed, conformed tables plus their quarantine/rejected counterparts.
+
     audit_schema:
       name: audit
       catalog_name: ${var.catalog}

@@ -1,0 +1,28 @@
+# DLT pipeline for Silver Phase 3 -- silver_locations/silver_streets plus
+# their _rejected quarantine counterparts, all defined in one pipeline source
+# file (src/pipelines/silver/dlt_silver_tables.py). Later phases add more
+# tables to the same notebook rather than a new pipeline.
+#
+# `target` uses ${resources.schemas.silver_schema.name} rather than a literal
+# "silver" -- same reasoning as the Bronze DLT pipeline: env.yml's
+# silver_schema field is only visible to Python code via config_loader.py,
+# not to DABs' own templating layer, and mode: development auto-prefixes it
+# per-user, so a literal here would silently write into a schema that
+# doesn't exist in dev.
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#   databricks bundle run silver_job -t dev   # runs the pipeline via its pipeline_task
+
+resources:
+  pipelines:
+    silver_dlt_pipeline:
+      name: "Silver Layer"
+      catalog: ${var.catalog}
+      target: ${resources.schemas.silver_schema.name}
+      serverless: true
+      libraries:
+        - notebook:
+            path: ../../src/pipelines/silver/dlt_silver_tables.py
+      configuration:
+        env: ${bundle.target}

@@ -1,0 +1,32 @@
+# Silver Phase 3 job -- one task, triggering the Silver DLT pipeline. Follows
+# the same pipeline_task pattern already used for Bronze's DLT table
+# (bronze_autoloader_pyspark_dlt_job.yml's dlt_chunk2_csv task).
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#   databricks bundle run silver_job -t dev
+
+resources:
+  jobs:
+    silver_job:
+      name: "Silver Layer"
+      tags:
+        project: vstone-traffic
+        layer: silver
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: env
+          default: ${bundle.target}
+
+      tasks:
+        - task_key: silver_dlt_pipeline
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.silver_dlt_pipeline.id}
+
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+
+      max_concurrent_runs: 1
