@@ -1,0 +1,31 @@
+# Gold Phase 2 job -- one task, triggering the Gold DLT pipeline. Follows the
+# same pipeline_task pattern already used for Bronze/Silver's DLT pipelines.
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#   databricks bundle run gold_job -t dev
+
+resources:
+  jobs:
+    gold_job:
+      name: "Gold Layer"
+      tags:
+        project: vstone-traffic
+        layer: gold
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: env
+          default: ${bundle.target}
+
+      tasks:
+        - task_key: gold_dlt_pipeline
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.gold_dlt_pipeline.id}
+
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+
+      max_concurrent_runs: 1

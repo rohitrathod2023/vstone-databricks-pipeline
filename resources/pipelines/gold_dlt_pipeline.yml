@@ -1,0 +1,27 @@
+# DLT pipeline for Gold Phase 2 -- Dim_Date, defined in
+# src/pipelines/gold/dlt_gold_tables.py. Later Gold phases add more tables
+# to the same notebook rather than a new pipeline.
+#
+# `target` uses ${resources.schemas.gold_schema.name} rather than a literal
+# "gold" -- same reasoning as the Bronze/Silver DLT pipelines: env.yml's
+# gold_schema field is only visible to Python code via config_loader.py, not
+# to DABs' own templating layer, and mode: development auto-prefixes it
+# per-user, so a literal here would silently write into a schema that
+# doesn't exist in dev.
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#   databricks bundle run gold_job -t dev   # runs the pipeline via its pipeline_task
+
+resources:
+  pipelines:
+    gold_dlt_pipeline:
+      name: "Gold Layer"
+      catalog: ${var.catalog}
+      target: ${resources.schemas.gold_schema.name}
+      serverless: true
+      libraries:
+        - notebook:
+            path: ../../src/pipelines/gold/dlt_gold_tables.py
+      configuration:
+        env: ${bundle.target}
