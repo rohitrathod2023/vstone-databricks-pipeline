@@ -28,6 +28,11 @@ resources:
       catalog_name: ${var.catalog}
       comment: Silver layer — cleaned, strictly-typed, conformed tables plus their quarantine/rejected counterparts.
 
+    gold_schema:
+      name: gold
+      catalog_name: ${var.catalog}
+      comment: Gold layer — dimensional model (dimensions + fact tables) for BI/analytics consumption.
+
     audit_schema:
       name: audit
       catalog_name: ${var.catalog}

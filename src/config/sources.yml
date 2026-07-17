@@ -168,3 +168,60 @@ silver_telegram_rejected:
   technique: delta_live_tables
   target_table: ${catalog}.${silver_schema}.silver_telegram_rejected
   description: Rows quarantined from silver_telegram — see rejection_reason for which rule failed.
+
+# ---------------------------------------------------------------------------
+# Gold Phase 2 — Dim_Date, a generated calendar dimension (no source file)
+# ---------------------------------------------------------------------------
+dim_date:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.dim_date
+  description: One row per calendar day, generated from the real observed date range across silver_traffic/environment/telegram (+/- a 3-day buffer).
+
+# ---------------------------------------------------------------------------
+# Gold Phase 3 — Dim_Location, from silver_locations
+# ---------------------------------------------------------------------------
+dim_location:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.dim_location
+  description: Static location dimension (13 rows) -- location=7's bad coordinates already rejected at Silver.
+
+# ---------------------------------------------------------------------------
+# Gold Phase 4 — Dim_Street (SCD2), two-hop: stg_dim_street_scd2 (streaming,
+# AUTO CDC FROM SNAPSHOT plumbing) -> Dim_Street (materialized view, the
+# real public-facing dimension).
+# ---------------------------------------------------------------------------
+stg_dim_street_scd2:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.stg_dim_street_scd2
+  description: Internal CDC staging table -- not part of the documented Gold dimension list. AUTO CDC FROM SNAPSHOT target tracking dangerous/street/long/latitude/longitude history.
+
+dim_street:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.dim_street
+  description: SCD2 street dimension (36 streets) -- full version history, carries is_current for downstream joins.
+
+# ---------------------------------------------------------------------------
+# Gold Phase 5 — fact tables
+# ---------------------------------------------------------------------------
+fact_traffic_counts:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.fact_traffic_counts
+  description: silver_traffic joined to Dim_Location and Dim_Date -- one row per original silver_traffic row (24,681,794).
+
+fact_street_conditions:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.fact_street_conditions
+  description: silver_environment's accepted rows joined to Dim_Street (SCD2 range join) and Dim_Date.
+
+# ---------------------------------------------------------------------------
+# Gold Phase 6 — business aggregate tables
+# ---------------------------------------------------------------------------
+gold_monthly_traffic_summary:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.gold_monthly_traffic_summary
+  description: Fact_Traffic_Counts rolled up to location x month, with busiest_rank_in_month for trivial top-10 filtering.
+
+gold_street_risk_summary:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.gold_street_risk_summary
+  description: Fact_Street_Conditions rolled up to street x month, joined to Dim_Street's SCD2 history for month-over-month risk-class change tracking.
