@@ -102,5 +102,27 @@ def get_source_schema(source_key: str):
     return SCHEMAS[lookup_key]
 
 
+def get_silver_schema(source_key: str):
+    """Return the strict, typed StructType for a Silver table.
+
+    Args:
+        source_key: Silver sources.yml key, e.g. "silver_locations".
+
+    Returns:
+        StructType: the strict schema from config/silver_schemas.py.
+
+    Notes:
+        Deliberately a separate function from get_source_schema() (Bronze's
+        permissive STRING schemas) rather than one function branching on
+        layer -- keeps a caller from accidentally receiving a permissive
+        schema where a strict one is required, or vice versa.
+    """
+    from config.silver_schemas import SILVER_SCHEMAS
+
+    if source_key not in SILVER_SCHEMAS:
+        raise KeyError(f"No Silver schema defined for '{source_key}'. Known: {sorted(SILVER_SCHEMAS)}")
+    return SILVER_SCHEMAS[source_key]
+
+
 def get_all_source_keys() -> list[str]:
     return sorted(_load_yaml(_SOURCES_FILE).keys())

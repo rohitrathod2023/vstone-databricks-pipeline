@@ -106,3 +106,65 @@ bronze_telegram:
   source_key: raw_telegram
   technique: copy_into
   target_table: ${catalog}.${bronze_schema}.telegram
+
+# ---------------------------------------------------------------------------
+# Silver Phase 3 — dimension staging tables (locations, streets), via DLT
+# ---------------------------------------------------------------------------
+silver_locations:
+  technique: delta_live_tables
+  target_table: ${catalog}.${silver_schema}.silver_locations
+  description: Cleaned, strictly-typed, quarantined node_locations — traffic domain's dimension staging.
+
+silver_locations_rejected:
+  technique: delta_live_tables
+  target_table: ${catalog}.${silver_schema}.silver_locations_rejected
+  description: Rows quarantined from silver_locations — see rejection_reason for which rule failed.
+
+silver_streets:
+  technique: delta_live_tables
+  target_table: ${catalog}.${silver_schema}.silver_streets
+  description: Cleaned, strictly-typed, quarantined streets_list — carries the dangerous score Gold's Dim_Street depends on.
+
+silver_streets_rejected:
+  technique: delta_live_tables
+  target_table: ${catalog}.${silver_schema}.silver_streets_rejected
+  description: Rows quarantined from silver_streets — see rejection_reason for which rule failed.
+
+# ---------------------------------------------------------------------------
+# Silver Phase 4 — silver_traffic, UNION ALL of the 4 Bronze traffic tables
+# ---------------------------------------------------------------------------
+silver_traffic:
+  technique: delta_live_tables
+  target_table: ${catalog}.${silver_schema}.silver_traffic
+  description: Cleaned, strictly-typed, deduped UNION ALL of the 4 Bronze traffic_counts_* tables.
+
+silver_traffic_rejected:
+  technique: delta_live_tables
+  target_table: ${catalog}.${silver_schema}.silver_traffic_rejected
+  description: Rows quarantined from silver_traffic — see rejection_reason for which rule failed.
+
+# ---------------------------------------------------------------------------
+# Silver Phase 5 — silver_environment, from bronze.street_conditions
+# ---------------------------------------------------------------------------
+silver_environment:
+  technique: delta_live_tables
+  target_table: ${catalog}.${silver_schema}.silver_environment
+  description: Cleaned, strictly-typed, deduped, quarantined street_conditions (streets.csv).
+
+silver_environment_rejected:
+  technique: delta_live_tables
+  target_table: ${catalog}.${silver_schema}.silver_environment_rejected
+  description: Rows quarantined from silver_environment — see rejection_reason for which rule failed.
+
+# ---------------------------------------------------------------------------
+# Silver Phase 6 — silver_telegram, from bronze.telegram
+# ---------------------------------------------------------------------------
+silver_telegram:
+  technique: delta_live_tables
+  target_table: ${catalog}.${silver_schema}.silver_telegram
+  description: Cleaned, deduped telegram.csv with date+hour combined into one real event_timestamp.
+
+silver_telegram_rejected:
+  technique: delta_live_tables
+  target_table: ${catalog}.${silver_schema}.silver_telegram_rejected
+  description: Rows quarantined from silver_telegram — see rejection_reason for which rule failed.
