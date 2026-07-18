@@ -91,29 +91,93 @@ already up to date gets wastefully recomputed, and the job exists as its own
 named, function-scoped entry point for scheduling the aggregate refresh
 independently of the raw dimension/fact build.
 
-## Constraint enforcement — a real Unity Catalog limitation, not just "not enforced"
+## Constraint enforcement — real, registered UC constraints, declared at table-creation time
 
-Databricks documents Unity Catalog primary/foreign keys as **informational
-only** (not enforced like an RDBMS — "it is the user's responsibility to
-check whether a constraint is satisfied"). But the actual limitation found
-building this model is stronger than that framing suggests: **`ALTER TABLE
-... ADD CONSTRAINT` cannot be attached to a DLT materialized view at all.**
-Confirmed live against every table above:
+**Update:** an earlier version of this doc concluded that PK/FK constraints
+could not be attached to Gold tables at all, because `ALTER TABLE ... ADD
+CONSTRAINT` fails against every one of them:
 
 ```
 [EXPECT_TABLE_NOT_VIEW.NO_ALTERNATIVE] 'ALTER TABLE ... ADD CONSTRAINT'
 expects a table but `...`.`dim_location` is a view.
 ```
 
-Unity Catalog registers a DLT materialized view as a `VIEW` object, not a
-plain table, regardless of the real Delta table backing it internally — so
-this isn't a matter of the constraint being unenforced once added, it's that
-no constraint can be added in the first place while these tables stay
-materialized views. Since every Gold table here is a materialized view by
-design (the already-agreed default, with `stg_dim_street_scd2` the sole
-streaming-table exception for CDC plumbing), the PK/FK relationships above
-are documented as the model's real, intended design — not registered as
-literal Unity Catalog constraints. Converting any of these to plain
-Delta tables outside DLT purely to attach a constraint would abandon the
-materialized-view design already agreed for Gold, so this was deliberately
-not done.
+That's still true, but it turned out to be a limitation of `ALTER TABLE`
+specifically (a *post-hoc* DDL statement issued against an already-created,
+view-registered object), not a limitation of Unity Catalog constraints on
+materialized views in general. Lakeflow Declarative Pipelines supports
+declaring `PRIMARY KEY`/`FOREIGN KEY` constraints **inline in the `schema=`
+argument of `@dlt.table`**, at the moment the table is created by the
+pipeline itself — a different code path that Unity Catalog does accept for
+materialized views. Every `@dlt.table(...)` in
+`src/pipelines/gold/dlt_gold_tables.py` now declares its full column schema
+plus its constraints this way, e.g.:
+
+```python
+@dlt.table(
+    name="dim_location",
+    comment=_DIM_LOCATION_CFG["description"],
+    schema="""
+        location_key    INT     NOT NULL,
+        location        INT,
+        latitude        DOUBLE,
+        longitude       DOUBLE,
+        load_dt         TIMESTAMP,
+        source_format   STRING,
+        source_file     STRING,
+        run_id          STRING,
+        CONSTRAINT dim_location_pk PRIMARY KEY (location_key)
+    """,
+)
+```
+
+Confirmed live, post-full-refresh deploy, by querying
+`information_schema.table_constraints` and `information_schema.key_column_usage`
+in `vstone_traffic_dev`: every constraint below is really registered against
+its table, with the correct column(s) --
+
+| Table | Constraint | Type | Column(s) |
+|---|---|---|---|
+| `dim_date` | `dim_date_pk` | PRIMARY KEY | `date_key` |
+| `dim_location` | `dim_location_pk` | PRIMARY KEY | `location_key` |
+| `dim_street` | `dim_street_pk` | PRIMARY KEY | `street_key` |
+| `fact_traffic_counts` | `fact_traffic_counts_location_fk` | FOREIGN KEY | `location_key` -> `dim_location.location_key` |
+| `fact_traffic_counts` | `fact_traffic_counts_date_fk` | FOREIGN KEY | `date_key` -> `dim_date.date_key` |
+| `fact_street_conditions` | `fact_street_conditions_street_fk` | FOREIGN KEY | `street_key` -> `dim_street.street_key` |
+| `fact_street_conditions` | `fact_street_conditions_date_fk` | FOREIGN KEY | `date_key` -> `dim_date.date_key` |
+| `gold_monthly_traffic_summary` | `gold_monthly_traffic_summary_location_fk` | FOREIGN KEY | `location_key` -> `dim_location.location_key` |
+| `gold_street_risk_summary` | `gold_street_risk_summary_pk` | PRIMARY KEY | `street_id`, `year`, `month` (composite) |
+
+`information_schema.tables.table_type` still reports `MATERIALIZED_VIEW` for
+every one of these (confirmed unchanged) -- attaching a constraint this way
+does not convert the table to a plain Delta table, and the materialized-view
+design is fully preserved. Databricks still documents UC PK/FK as
+**informational only** (not enforced like an RDBMS foreign key at write
+time), so these constraints exist for catalog lineage/documentation/BI-tool
+discovery purposes, not to reject bad writes.
+
+Two intentional gaps in the table above, both load-bearing design decisions:
+
+- **`gold_monthly_traffic_summary` has no `PRIMARY KEY`.** Its grain is
+  `(location_key, year, month)`, but `location_key` is legitimately `NULL`
+  for 10 of its 140 rows (the `location=7` orphan, see above) -- a primary
+  key member can't be `NULL`, so no PK is declared. Its `FOREIGN KEY` on
+  `location_key` is unaffected, since FK columns are allowed to be `NULL`.
+- **`gold_street_risk_summary` has no `FOREIGN KEY` to `Dim_Street`.**
+  `Dim_Street`'s primary key is the surrogate `street_key`, not `street_id`
+  -- `street_id` repeats across SCD2 versions by design, so it isn't unique
+  in `Dim_Street` and can't be a valid FK target there.
+
+Two real column-type bugs were caught and fixed while writing these schema
+strings, both against the actual Silver source schemas
+(`src/config/silver_schemas.py`): `Dim_Street.long` (street length in
+meters) is `INT`, not `DOUBLE` -- a first draft of this schema declared it
+as `DOUBLE`, which would have mismatched `silver_streets.long`'s real
+`IntegerType`. Same for `Fact_Traffic_Counts.id`, which is `INT`
+(`silver_traffic.id` is `IntegerType`), not `STRING`. Verified post-deploy
+via `dtypes` on the live tables.
+
+All full-refreshed and re-verified after this change: row counts unchanged
+and still exact (`fact_traffic_counts` 24,681,794, `fact_street_conditions`
+87,776,721, `gold_monthly_traffic_summary` 140, `gold_street_risk_summary`
+360).
