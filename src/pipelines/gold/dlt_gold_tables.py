@@ -60,6 +60,15 @@ from pipelines.gold.fact_street_conditions import build_fact_street_conditions  
 from pipelines.gold.fact_traffic_counts import build_fact_traffic_counts  # noqa: E402
 from pipelines.gold.gold_monthly_traffic_summary import build_gold_monthly_traffic_summary  # noqa: E402
 from pipelines.gold.gold_street_risk_summary import build_gold_street_risk_summary  # noqa: E402
+from pipelines.gold.table_schemas import (  # noqa: E402
+    DIM_DATE_SCHEMA,
+    DIM_LOCATION_SCHEMA,
+    DIM_STREET_SCHEMA,
+    FACT_STREET_CONDITIONS_SCHEMA,
+    FACT_TRAFFIC_COUNTS_SCHEMA,
+    GOLD_MONTHLY_TRAFFIC_SUMMARY_SCHEMA,
+    GOLD_STREET_RISK_SUMMARY_SCHEMA,
+)
 from utils.config_loader import get_source_config  # noqa: E402
 
 _ENV = spark.conf.get("env", "dev")
@@ -84,7 +93,11 @@ _STREETS_TABLE = get_source_config("silver_streets", env=_ENV)["target_table"]
 # DBTITLE 1,Dim_Date
 
 
-@dlt.table(name="dim_date", comment=_DIM_DATE_CFG["description"])
+@dlt.table(
+    name="dim_date",
+    comment=_DIM_DATE_CFG["description"],
+    schema=DIM_DATE_SCHEMA,
+)
 def dim_date():
     # Plain spark.table() reads (not spark.readStream), matching the
     # materialized-view convention for Gold -- also needed here since
@@ -103,7 +116,11 @@ def dim_date():
 # DBTITLE 1,Dim_Location
 
 
-@dlt.table(name="dim_location", comment=_DIM_LOCATION_CFG["description"])
+@dlt.table(
+    name="dim_location",
+    comment=_DIM_LOCATION_CFG["description"],
+    schema=DIM_LOCATION_SCHEMA,
+)
 def dim_location():
     return build_dim_location(spark.table(_LOCATIONS_TABLE))
 
@@ -145,7 +162,11 @@ dlt.create_auto_cdc_from_snapshot_flow(
 )
 
 
-@dlt.table(name="dim_street", comment=_DIM_STREET_CFG["description"])
+@dlt.table(
+    name="dim_street",
+    comment=_DIM_STREET_CFG["description"],
+    schema=DIM_STREET_SCHEMA,
+)
 def dim_street():
     # Plain spark.table() (not spark.readStream) -- this is what makes
     # Dim_Street a materialized view, and what makes row_number() work in
@@ -162,7 +183,11 @@ def dim_street():
 # DBTITLE 1,Fact_Traffic_Counts
 
 
-@dlt.table(name="fact_traffic_counts", comment=_FACT_TRAFFIC_COUNTS_CFG["description"])
+@dlt.table(
+    name="fact_traffic_counts",
+    comment=_FACT_TRAFFIC_COUNTS_CFG["description"],
+    schema=FACT_TRAFFIC_COUNTS_SCHEMA,
+)
 def fact_traffic_counts():
     traffic_df = spark.table(_TRAFFIC_TABLE)
     dim_location_df = spark.table("dim_location")
@@ -175,7 +200,11 @@ def fact_traffic_counts():
 # DBTITLE 1,Fact_Street_Conditions
 
 
-@dlt.table(name="fact_street_conditions", comment=_FACT_STREET_CONDITIONS_CFG["description"])
+@dlt.table(
+    name="fact_street_conditions",
+    comment=_FACT_STREET_CONDITIONS_CFG["description"],
+    schema=FACT_STREET_CONDITIONS_SCHEMA,
+)
 def fact_street_conditions():
     environment_df = spark.table(_ENVIRONMENT_TABLE)
     dim_street_df = spark.table("dim_street")
@@ -188,7 +217,11 @@ def fact_street_conditions():
 # DBTITLE 1,gold_monthly_traffic_summary
 
 
-@dlt.table(name="gold_monthly_traffic_summary", comment=_GOLD_MONTHLY_TRAFFIC_SUMMARY_CFG["description"])
+@dlt.table(
+    name="gold_monthly_traffic_summary",
+    comment=_GOLD_MONTHLY_TRAFFIC_SUMMARY_CFG["description"],
+    schema=GOLD_MONTHLY_TRAFFIC_SUMMARY_SCHEMA,
+)
 def gold_monthly_traffic_summary():
     fact_traffic_counts_df = spark.table("fact_traffic_counts")
     dim_date_df = spark.table("dim_date")
@@ -200,7 +233,11 @@ def gold_monthly_traffic_summary():
 # DBTITLE 1,gold_street_risk_summary
 
 
-@dlt.table(name="gold_street_risk_summary", comment=_GOLD_STREET_RISK_SUMMARY_CFG["description"])
+@dlt.table(
+    name="gold_street_risk_summary",
+    comment=_GOLD_STREET_RISK_SUMMARY_CFG["description"],
+    schema=GOLD_STREET_RISK_SUMMARY_SCHEMA,
+)
 def gold_street_risk_summary():
     fact_street_conditions_df = spark.table("fact_street_conditions")
     dim_street_df = spark.table("dim_street")
