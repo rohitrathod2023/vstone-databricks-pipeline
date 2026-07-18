@@ -60,6 +60,15 @@ from pipelines.gold.fact_street_conditions import build_fact_street_conditions  
 from pipelines.gold.fact_traffic_counts import build_fact_traffic_counts  # noqa: E402
 from pipelines.gold.gold_monthly_traffic_summary import build_gold_monthly_traffic_summary  # noqa: E402
 from pipelines.gold.gold_street_risk_summary import build_gold_street_risk_summary  # noqa: E402
+from pipelines.gold.table_schemas import (  # noqa: E402
+    DIM_DATE_SCHEMA,
+    DIM_LOCATION_SCHEMA,
+    DIM_STREET_SCHEMA,
+    FACT_STREET_CONDITIONS_SCHEMA,
+    FACT_TRAFFIC_COUNTS_SCHEMA,
+    GOLD_MONTHLY_TRAFFIC_SUMMARY_SCHEMA,
+    GOLD_STREET_RISK_SUMMARY_SCHEMA,
+)
 from utils.config_loader import get_source_config  # noqa: E402
 
 _ENV = spark.conf.get("env", "dev")
@@ -87,23 +96,7 @@ _STREETS_TABLE = get_source_config("silver_streets", env=_ENV)["target_table"]
 @dlt.table(
     name="dim_date",
     comment=_DIM_DATE_CFG["description"],
-    schema="""
-        date_key        INT     NOT NULL,
-        full_date       DATE,
-        year            INT,
-        month           INT,
-        month_name      STRING,
-        day_of_month    INT,
-        day_of_week     INT,
-        day_name        STRING,
-        quarter         INT,
-        is_weekend      BOOLEAN,
-        load_dt         TIMESTAMP,
-        source_format   STRING,
-        source_file     STRING,
-        run_id          STRING,
-        CONSTRAINT dim_date_pk PRIMARY KEY (date_key)
-    """,
+    schema=DIM_DATE_SCHEMA,
 )
 def dim_date():
     # Plain spark.table() reads (not spark.readStream), matching the
@@ -126,17 +119,7 @@ def dim_date():
 @dlt.table(
     name="dim_location",
     comment=_DIM_LOCATION_CFG["description"],
-    schema="""
-        location_key    INT     NOT NULL,
-        location        INT,
-        latitude        DOUBLE,
-        longitude       DOUBLE,
-        load_dt         TIMESTAMP,
-        source_format   STRING,
-        source_file     STRING,
-        run_id          STRING,
-        CONSTRAINT dim_location_pk PRIMARY KEY (location_key)
-    """,
+    schema=DIM_LOCATION_SCHEMA,
 )
 def dim_location():
     return build_dim_location(spark.table(_LOCATIONS_TABLE))
@@ -182,23 +165,7 @@ dlt.create_auto_cdc_from_snapshot_flow(
 @dlt.table(
     name="dim_street",
     comment=_DIM_STREET_CFG["description"],
-    schema="""
-        street_key      INT     NOT NULL,
-        street_id       INT,
-        street          STRING,
-        long            INT,
-        latitude        DOUBLE,
-        longitude       DOUBLE,
-        dangerous       DOUBLE,
-        __START_AT      TIMESTAMP,
-        __END_AT        TIMESTAMP,
-        is_current      BOOLEAN,
-        load_dt         TIMESTAMP,
-        source_format   STRING,
-        source_file     STRING,
-        run_id          STRING,
-        CONSTRAINT dim_street_pk PRIMARY KEY (street_key)
-    """,
+    schema=DIM_STREET_SCHEMA,
 )
 def dim_street():
     # Plain spark.table() (not spark.readStream) -- this is what makes
@@ -219,22 +186,7 @@ def dim_street():
 @dlt.table(
     name="fact_traffic_counts",
     comment=_FACT_TRAFFIC_COUNTS_CFG["description"],
-    schema="""
-        location_key        INT,
-        date_key            INT,
-        id                  INT,
-        enter               INT,
-        exit                INT,
-        source_technique    STRING,
-        load_dt             TIMESTAMP,
-        source_format       STRING,
-        source_file         STRING,
-        run_id              STRING,
-        CONSTRAINT fact_traffic_counts_location_fk
-            FOREIGN KEY (location_key) REFERENCES dim_location(location_key),
-        CONSTRAINT fact_traffic_counts_date_fk
-            FOREIGN KEY (date_key) REFERENCES dim_date(date_key)
-    """,
+    schema=FACT_TRAFFIC_COUNTS_SCHEMA,
 )
 def fact_traffic_counts():
     traffic_df = spark.table(_TRAFFIC_TABLE)
@@ -251,22 +203,7 @@ def fact_traffic_counts():
 @dlt.table(
     name="fact_street_conditions",
     comment=_FACT_STREET_CONDITIONS_CFG["description"],
-    schema="""
-        street_key      INT,
-        date_key        INT,
-        noise           DOUBLE,
-        pollution       DOUBLE,
-        light           DOUBLE,
-        raining         DOUBLE,
-        load_dt         TIMESTAMP,
-        source_format   STRING,
-        source_file     STRING,
-        run_id          STRING,
-        CONSTRAINT fact_street_conditions_street_fk
-            FOREIGN KEY (street_key) REFERENCES dim_street(street_key),
-        CONSTRAINT fact_street_conditions_date_fk
-            FOREIGN KEY (date_key) REFERENCES dim_date(date_key)
-    """,
+    schema=FACT_STREET_CONDITIONS_SCHEMA,
 )
 def fact_street_conditions():
     environment_df = spark.table(_ENVIRONMENT_TABLE)
@@ -283,31 +220,7 @@ def fact_street_conditions():
 @dlt.table(
     name="gold_monthly_traffic_summary",
     comment=_GOLD_MONTHLY_TRAFFIC_SUMMARY_CFG["description"],
-    # No PRIMARY KEY here: the grain is (location_key, year, month), but
-    # location_key is legitimately NULL for 10 rows -- silver_traffic has
-    # real location=7 readings even though location=7 was excluded from
-    # Dim_Location at Silver (bad coordinates), and that orphan surfaces
-    # here as its own NULL-location group per month (see
-    # docs/gold_data_model.md). A PRIMARY KEY member can't be NULL, so
-    # declaring one on this grain would either fail deployment or
-    # misrepresent the data; the FK below is unaffected since FK columns
-    # are allowed to be NULL (same as Fact_Traffic_Counts.location_key).
-    schema="""
-        location_key                INT,
-        year                        INT,
-        month                       INT,
-        total_enter                 LONG,
-        total_exit                  LONG,
-        total_traffic_volume        LONG,
-        avg_daily_traffic_volume    DOUBLE,
-        busiest_rank_in_month       INT,
-        load_dt                     TIMESTAMP,
-        source_format               STRING,
-        source_file                 STRING,
-        run_id                      STRING,
-        CONSTRAINT gold_monthly_traffic_summary_location_fk
-            FOREIGN KEY (location_key) REFERENCES dim_location(location_key)
-    """,
+    schema=GOLD_MONTHLY_TRAFFIC_SUMMARY_SCHEMA,
 )
 def gold_monthly_traffic_summary():
     fact_traffic_counts_df = spark.table("fact_traffic_counts")
@@ -323,29 +236,7 @@ def gold_monthly_traffic_summary():
 @dlt.table(
     name="gold_street_risk_summary",
     comment=_GOLD_STREET_RISK_SUMMARY_CFG["description"],
-    # No FOREIGN KEY to dim_street here: dim_street's PRIMARY KEY is the
-    # surrogate street_key, not street_id -- street_id repeats across SCD2
-    # versions (by design), so it isn't unique in dim_street and can't be a
-    # valid FK target there. street_id/year/month are verified NOT NULL in
-    # real data (0 nulls found live), safe to declare as the PK.
-    schema="""
-        street_id                       INT     NOT NULL,
-        year                            INT     NOT NULL,
-        month                           INT     NOT NULL,
-        avg_noise                       DOUBLE,
-        avg_pollution                   DOUBLE,
-        avg_light                       DOUBLE,
-        rain_event_count                LONG,
-        dangerous_rating_this_month     DOUBLE,
-        dangerous_rating_prior_month    DOUBLE,
-        risk_changed_flag               BOOLEAN,
-        risk_direction                  STRING,
-        load_dt                         TIMESTAMP,
-        source_format                   STRING,
-        source_file                     STRING,
-        run_id                          STRING,
-        CONSTRAINT gold_street_risk_summary_pk PRIMARY KEY (street_id, year, month)
-    """,
+    schema=GOLD_STREET_RISK_SUMMARY_SCHEMA,
 )
 def gold_street_risk_summary():
     fact_street_conditions_df = spark.table("fact_street_conditions")
