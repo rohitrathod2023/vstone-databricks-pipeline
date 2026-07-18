@@ -9,6 +9,7 @@ Run locally:
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -27,17 +28,23 @@ def spark():
     session.stop()
 
 
+# Fixed Bronze audit values appended to every synthetic row below -- proves
+# build_checked_locations carries them through unchanged rather than
+# regenerating (see locations.py's build_checked_locations Notes).
+_AUDIT_VALUES = (datetime(2024, 1, 1, 12, 0, 0), "csv", "node_locations.csv", "test-run-id")
+
+
 def _make_bronze_df(spark):
     """Reproduces the real node_locations shape: 2 good rows + the real bad
     row (location=7, lat/long exactly 0.0/0.0), plus messy header names to
     confirm header standardization runs too."""
     return spark.createDataFrame(
         [
-            ("38.985252", "-0.537441", "1"),
-            ("0.0", "0.0", "7"),  # the real bad row found during Phase 1 profiling
-            ("38.991913", "-0.524291", "9"),
+            ("38.985252", "-0.537441", "1") + _AUDIT_VALUES,
+            ("0.0", "0.0", "7") + _AUDIT_VALUES,  # the real bad row found during Phase 1 profiling
+            ("38.991913", "-0.524291", "9") + _AUDIT_VALUES,
         ],
-        ["Latitude", "  Longitude", "location"],
+        ["Latitude", "  Longitude", "location", "load_dt", "source_format", "source_file", "run_id"],
     )
 
 
@@ -99,4 +106,7 @@ def test_header_standardization_is_applied(spark):
 
     checked = build_checked_locations(_make_bronze_df(spark))
 
-    assert set(checked.columns) == {"location", "latitude", "longitude", "rejection_reason"}
+    assert set(checked.columns) == {
+        "location", "latitude", "longitude", "rejection_reason",
+        "load_dt", "source_format", "source_file", "run_id",
+    }

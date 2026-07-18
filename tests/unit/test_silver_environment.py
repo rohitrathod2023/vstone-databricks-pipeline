@@ -11,6 +11,7 @@ Run locally:
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -30,11 +31,20 @@ def spark():
 
 
 def _cols():
-    return ["noise", "pollution", "date", "light", "raining", "street_id"]
+    return [
+        "noise", "pollution", "date", "light", "raining", "street_id",
+        "load_dt", "source_format", "source_file", "run_id",
+    ]
+
+
+# Fixed Bronze audit values appended to every synthetic row -- proves
+# build_checked_environment carries them through unchanged rather than
+# regenerating (see environment.py's build_checked_environment Notes).
+_AUDIT_VALUES = (datetime(2024, 1, 1, 12, 0, 0), "csv", "streets.csv", "test-run-id")
 
 
 def _row(noise="10.5", pollution="8.2", date="2024-01-01T10:00:00", light="30.0", raining="0.0", street_id="1"):
-    return (noise, pollution, date, light, raining, street_id)
+    return (noise, pollution, date, light, raining, street_id) + _AUDIT_VALUES
 
 
 def test_valid_output_schema_matches_silver_environment_schema_exactly(spark):

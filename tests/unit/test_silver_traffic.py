@@ -8,6 +8,7 @@ Run locally:
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -27,11 +28,20 @@ def spark():
 
 
 def _cols():
-    return ["enter", "exit", "date", "id", "location"]
+    return ["enter", "exit", "date", "id", "location", "load_dt", "source_format", "source_file", "run_id"]
+
+
+# Fixed Bronze audit values appended to every synthetic row -- proves
+# build_checked_traffic carries each of the 4 Bronze tables' own audit
+# columns through unchanged rather than regenerating (see traffic.py's
+# build_checked_traffic Notes). Real Bronze tables differ in
+# source_format/source_file per technique (csv/json/xml); a single fixed
+# value here is enough to prove passthrough without needing 4 distinct sets.
+_AUDIT_VALUES = (datetime(2024, 1, 1, 12, 0, 0), "csv", "chunk1.csv", "test-run-id")
 
 
 def _row(enter="5", exit_="3", date="2024-01-01T10:00:00", id_="100", location="1"):
-    return (enter, exit_, date, id_, location)
+    return (enter, exit_, date, id_, location) + _AUDIT_VALUES
 
 
 def test_assert_schemas_match_passes_for_identical_columns(spark):
@@ -49,7 +59,8 @@ def test_assert_schemas_match_raises_on_a_real_mismatch(spark):
     from pipelines.silver.traffic import assert_schemas_match
 
     good_dfs = [spark.createDataFrame([_row()], _cols()) for _ in range(3)]
-    mismatched_df = spark.createDataFrame([_row()], ["enter", "exit", "date_", "id", "location"])
+    mismatched_cols = ["enter", "exit", "date_", "id", "location", "load_dt", "source_format", "source_file", "run_id"]
+    mismatched_df = spark.createDataFrame([_row()], mismatched_cols)
 
     with pytest.raises(ValueError):
         assert_schemas_match(good_dfs + [mismatched_df])

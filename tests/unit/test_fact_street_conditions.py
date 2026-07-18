@@ -10,6 +10,7 @@ Run locally:
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -35,7 +36,17 @@ def _dim_date_df(spark):
 
 
 def _env_cols():
-    return ["street_id", "date", "noise", "pollution", "light", "raining"]
+    return [
+        "street_id", "date", "noise", "pollution", "light", "raining",
+        "load_dt", "source_format", "source_file", "run_id",
+    ]
+
+
+# Fixed silver_environment audit values -- proves build_fact_street_conditions
+# carries them through from the fact-side table unchanged rather than
+# regenerating (see fact_street_conditions.py's build_fact_street_conditions
+# Notes).
+_AUDIT_VALUES = (datetime(2024, 1, 1, 12, 0, 0), "delta", "silver_environment", "test-run-id")
 
 
 def _dim_street_schema():
@@ -60,7 +71,7 @@ def test_row_count_matches_input_exactly_no_fan_out_with_a_single_scd2_version(s
         [(1, 1, "2023-01-01T00:00:00", None)], _dim_street_schema()
     )
     environment_df = spark.createDataFrame(
-        [(1, "2024-01-01T10:00:00", 10.0, 5.0, 20.0, 0.3)], _env_cols()
+        [(1, "2024-01-01T10:00:00", 10.0, 5.0, 20.0, 0.3) + _AUDIT_VALUES], _env_cols()
     )
     result = build_fact_street_conditions(environment_df, dim_street_df, _dim_date_df(spark))
 
@@ -74,7 +85,7 @@ def test_schema_matches_expected_shape(spark):
         [(1, 1, "2023-01-01T00:00:00", None)], _dim_street_schema()
     )
     environment_df = spark.createDataFrame(
-        [(1, "2024-01-01T10:00:00", 10.0, 5.0, 20.0, 0.3)], _env_cols()
+        [(1, "2024-01-01T10:00:00", 10.0, 5.0, 20.0, 0.3) + _AUDIT_VALUES], _env_cols()
     )
     result = build_fact_street_conditions(environment_df, dim_street_df, _dim_date_df(spark))
 
@@ -102,8 +113,10 @@ def test_a_fact_resolves_to_the_scd2_version_active_on_its_own_date_not_just_the
     )
     environment_df = spark.createDataFrame(
         [
-            (1, "2024-01-01T10:00:00", 10.0, 5.0, 20.0, 0.3),  # before the change -> should resolve to key 10
-            (1, "2024-06-01T10:00:00", 12.0, 6.0, 21.0, 0.4),  # after the change -> should resolve to key 11
+            # before the change -> should resolve to key 10
+            (1, "2024-01-01T10:00:00", 10.0, 5.0, 20.0, 0.3) + _AUDIT_VALUES,
+            # after the change -> should resolve to key 11
+            (1, "2024-06-01T10:00:00", 12.0, 6.0, 21.0, 0.4) + _AUDIT_VALUES,
         ],
         _env_cols(),
     )
@@ -124,7 +137,7 @@ def test_an_unresolvable_street_produces_null_key_not_a_dropped_row(spark):
         [(1, 1, "2023-01-01T00:00:00", None)], _dim_street_schema()
     )
     environment_df = spark.createDataFrame(
-        [(999, "2024-01-01T10:00:00", 10.0, 5.0, 20.0, 0.3)], _env_cols()
+        [(999, "2024-01-01T10:00:00", 10.0, 5.0, 20.0, 0.3) + _AUDIT_VALUES], _env_cols()
     )
     result = build_fact_street_conditions(environment_df, dim_street_df, _dim_date_df(spark))
 
@@ -146,7 +159,7 @@ def test_a_fact_older_than_the_dimensions_tracking_start_clamps_to_the_earliest_
         [(1, 1, "2026-07-17T00:00:00", None)], _dim_street_schema()
     )
     environment_df = spark.createDataFrame(
-        [(1, "2023-06-02T10:00:00", 10.0, 5.0, 20.0, 0.3)], _env_cols()
+        [(1, "2023-06-02T10:00:00", 10.0, 5.0, 20.0, 0.3) + _AUDIT_VALUES], _env_cols()
     )
     result = build_fact_street_conditions(environment_df, dim_street_df, _dim_date_df(spark))
     row = result.collect()[0]
@@ -168,9 +181,30 @@ def test_backfill_clamp_does_not_fan_out_when_multiple_versions_exist(spark):
         ["street_key", "street_id", "__START_AT", "__END_AT"],
     )
     environment_df = spark.createDataFrame(
-        [(1, "2023-06-02T10:00:00", 10.0, 5.0, 20.0, 0.3)], _env_cols()
+        [(1, "2023-06-02T10:00:00", 10.0, 5.0, 20.0, 0.3) + _AUDIT_VALUES], _env_cols()
     )
     result = build_fact_street_conditions(environment_df, dim_street_df, _dim_date_df(spark))
 
     assert result.count() == 1
     assert result.collect()[0]["street_key"] == 10
+
+
+def test_audit_columns_are_carried_through_from_silver_environment_not_regenerated(spark):
+    """The real fix this test guards: Gold used to call add_audit_columns()
+    fresh, overwriting silver_environment's original lineage. Now it must
+    select silver_environment's own audit values straight through unchanged,
+    not Dim_Street's or Dim_Date's (pure lookups here)."""
+    from pipelines.gold.fact_street_conditions import build_fact_street_conditions
+
+    dim_street_df = spark.createDataFrame(
+        [(1, 1, "2023-01-01T00:00:00", None)], _dim_street_schema()
+    )
+    environment_df = spark.createDataFrame(
+        [(1, "2024-01-01T10:00:00", 10.0, 5.0, 20.0, 0.3) + _AUDIT_VALUES], _env_cols()
+    )
+    row = build_fact_street_conditions(environment_df, dim_street_df, _dim_date_df(spark)).collect()[0]
+
+    assert row["load_dt"] == _AUDIT_VALUES[0]
+    assert row["source_format"] == "delta"
+    assert row["source_file"] == "silver_environment"
+    assert row["run_id"] == "test-run-id"

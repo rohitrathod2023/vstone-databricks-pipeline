@@ -9,11 +9,9 @@ from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
-from utils.audit import add_audit_columns
-
 
 def build_dim_location(silver_locations_df: DataFrame) -> DataFrame:
-    """Add a stable surrogate key to silver_locations and the standard audit columns.
+    """Add a stable surrogate key to silver_locations, carrying its audit columns through.
 
     Args:
         silver_locations_df: The accepted silver_locations DataFrame (13
@@ -22,7 +20,8 @@ def build_dim_location(silver_locations_df: DataFrame) -> DataFrame:
 
     Returns:
         DataFrame with location_key (surrogate key), location (natural
-        key), latitude, longitude, plus the 4 standard audit columns.
+        key), latitude, longitude, plus the 4 audit columns carried through
+        from silver_locations unchanged.
 
     Notes:
         location_key is row_number() ordered by the natural key (location),
@@ -31,11 +30,21 @@ def build_dim_location(silver_locations_df: DataFrame) -> DataFrame:
         across recomputes (fact tables look it up by value, not position),
         which an ID generator tied to partition/task ordering wouldn't
         guarantee.
+
+        load_dt/source_format/source_file/run_id are selected straight
+        through from silver_locations_df, not regenerated via
+        add_audit_columns() -- silver_locations already carries the
+        original Bronze ingestion's lineage (which raw file, which run),
+        so Gold re-stamping its own would overwrite that with Gold's own
+        processing time and lose the trail back to the source.
     """
-    with_key = silver_locations_df.select(
+    return silver_locations_df.select(
         F.row_number().over(Window.orderBy("location")).cast("int").alias("location_key"),
         F.col("location"),
         F.col("latitude"),
         F.col("longitude"),
+        F.col("load_dt"),
+        F.col("source_format"),
+        F.col("source_file"),
+        F.col("run_id"),
     )
-    return add_audit_columns(with_key, source_format="delta", source_file="silver_locations")

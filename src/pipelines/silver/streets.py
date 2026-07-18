@@ -31,7 +31,8 @@ def build_checked_streets(bronze_df: DataFrame) -> DataFrame:
 
     Returns:
         DataFrame with strictly-typed columns (street: string, long/
-        street_id: int, latitude/longitude/dangerous: double) plus a
+        street_id: int, latitude/longitude/dangerous: double), the 4 audit
+        columns carried through from Bronze unchanged, plus a
         rejection_reason column. silver_streets and silver_streets_rejected
         are both derived by filtering this same DataFrame.
 
@@ -40,6 +41,10 @@ def build_checked_streets(bronze_df: DataFrame) -> DataFrame:
         found problem -- Phase 1 profiling confirmed all 36 rows are
         currently clean on both. `long` is street length in meters, not to
         be confused with `longitude`.
+
+        load_dt/source_format/source_file/run_id are selected straight
+        through from bronze_df, not regenerated -- see locations.py's
+        build_checked_locations for why.
     """
     standardized = apply_header_standardization(bronze_df)
     typed = standardized.select(
@@ -49,5 +54,9 @@ def build_checked_streets(bronze_df: DataFrame) -> DataFrame:
         F.col("longitude").cast("double"),
         F.col("dangerous").cast("double"),
         F.col("street_id").cast("int"),
+        F.col("load_dt"),
+        F.col("source_format"),
+        F.col("source_file"),
+        F.col("run_id"),
     )
     return typed.withColumn("rejection_reason", build_rejection_reason_expr(STREETS_QUARANTINE_RULES))

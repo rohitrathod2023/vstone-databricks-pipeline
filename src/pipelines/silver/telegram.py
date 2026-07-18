@@ -28,10 +28,11 @@ def build_checked_telegram(bronze_df: DataFrame) -> DataFrame:
             date, hour).
 
     Returns:
-        DataFrame with columns (message: string, event_timestamp: timestamp)
-        plus a rejection_reason column. silver_telegram and
-        silver_telegram_rejected are both derived by filtering this same
-        DataFrame (see quarantine.valid_rows/rejected_rows).
+        DataFrame with columns (message: string, event_timestamp: timestamp),
+        the 4 audit columns carried through from Bronze unchanged, plus a
+        rejection_reason column. silver_telegram and silver_telegram_rejected
+        are both derived by filtering this same DataFrame (see
+        quarantine.valid_rows/rejected_rows).
 
     Notes:
         message reuses the whitespace-normalization Pandas UDF originally
@@ -56,6 +57,10 @@ def build_checked_telegram(bronze_df: DataFrame) -> DataFrame:
         pattern used everywhere else in Silver -- a real
         `GROUP BY message, date, hour HAVING COUNT(*) > 1` query against
         Bronze confirmed zero duplicate groups today.
+
+        load_dt/source_format/source_file/run_id are selected straight
+        through from bronze_df, not regenerated -- see locations.py's
+        build_checked_locations for why.
     """
     deduped_bronze = bronze_df.dropDuplicates(["message", "date", "hour"])
     standardized = apply_header_standardization(deduped_bronze)
@@ -64,5 +69,9 @@ def build_checked_telegram(bronze_df: DataFrame) -> DataFrame:
         F.try_to_timestamp(
             F.concat(F.col("date"), F.lit(" "), F.col("hour")), F.lit("dd/MM/yyyy HH:mm:ss")
         ).alias("event_timestamp"),
+        F.col("load_dt"),
+        F.col("source_format"),
+        F.col("source_file"),
+        F.col("run_id"),
     )
     return typed.withColumn("rejection_reason", build_rejection_reason_expr(TELEGRAM_QUARANTINE_RULES))

@@ -7,21 +7,20 @@ from __future__ import annotations
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 
-from utils.audit import add_audit_columns
-
 
 def build_fact_traffic_counts(traffic_df: DataFrame, dim_location_df: DataFrame, dim_date_df: DataFrame) -> DataFrame:
     """Join silver_traffic to Dim_Location and Dim_Date, resolving surrogate keys.
 
     Args:
         traffic_df: silver_traffic (id, location, enter, exit, date,
-            source_technique).
+            source_technique, plus its own audit columns).
         dim_location_df: Dim_Location (location, location_key, ...).
         dim_date_df: Dim_Date (full_date, date_key, ...).
 
     Returns:
         DataFrame with location_key, date_key, id, enter, exit,
-        source_technique, plus the 4 standard audit columns.
+        source_technique, plus the 4 audit columns carried through from
+        silver_traffic (the driving/fact-side table) unchanged.
 
     Notes:
         Uses LEFT joins, not inner -- an inner join would silently drop any
@@ -33,6 +32,14 @@ def build_fact_traffic_counts(traffic_df: DataFrame, dim_location_df: DataFrame,
         join is a pure lookup (Dim_Location has no duplicate `location`
         values, Dim_Date has no duplicate `full_date` values), so it must
         not fan out -- row count in should equal row count out.
+
+        Audit columns come from silver_traffic (t.*), not Dim_Location or
+        Dim_Date -- those are pure lookups here, and a fact row's real
+        lineage is the fact-side record it came from, not whichever
+        dimension row it happened to resolve to. Selected straight through,
+        not regenerated via add_audit_columns(), so the trail back to the
+        original Bronze ingestion (which raw file, which technique, which
+        run) survives all the way into Gold.
     """
     joined = (
         traffic_df.alias("t")
@@ -53,6 +60,10 @@ def build_fact_traffic_counts(traffic_df: DataFrame, dim_location_df: DataFrame,
             F.col("t.enter").alias("enter"),
             F.col("t.exit").alias("exit"),
             F.col("t.source_technique").alias("source_technique"),
+            F.col("t.load_dt").alias("load_dt"),
+            F.col("t.source_format").alias("source_format"),
+            F.col("t.source_file").alias("source_file"),
+            F.col("t.run_id").alias("run_id"),
         )
     )
-    return add_audit_columns(joined, source_format="delta", source_file="silver_traffic")
+    return joined

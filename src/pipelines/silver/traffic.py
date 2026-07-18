@@ -64,10 +64,11 @@ def build_checked_traffic(bronze_dfs: List[DataFrame]) -> DataFrame:
 
     Returns:
         DataFrame with strictly-typed columns (id/location/enter/exit: int,
-        date: timestamp, source_technique: string) plus a rejection_reason
-        column. silver_traffic and silver_traffic_rejected are both derived
-        by filtering this same DataFrame (see quarantine.valid_rows/
-        rejected_rows).
+        date: timestamp, source_technique: string), the 4 audit columns
+        carried through from each row's own Bronze table unchanged, plus a
+        rejection_reason column. silver_traffic and silver_traffic_rejected
+        are both derived by filtering this same DataFrame (see
+        quarantine.valid_rows/rejected_rows).
 
     Notes:
         dropDuplicates on the id+location+date natural key is defensive
@@ -79,6 +80,14 @@ def build_checked_traffic(bronze_dfs: List[DataFrame]) -> DataFrame:
         never negative; a date either parses or it doesn't), not tied to
         the currently-observed 0-35 enter/exit range -- expected to reject
         zero rows on current data, same as silver_streets_rejected.
+
+        load_dt/source_format/source_file/run_id are selected straight
+        through from each of the 4 Bronze tables unchanged, not regenerated
+        -- see locations.py's build_checked_locations for why. Each of the
+        4 techniques stamped these at its own Bronze ingestion, so a row's
+        audit columns after the union still trace back to the specific
+        Bronze table (and technique) it came from, same as
+        source_technique.
     """
     assert_schemas_match(bronze_dfs)
 
@@ -97,6 +106,10 @@ def build_checked_traffic(bronze_dfs: List[DataFrame]) -> DataFrame:
             # format), unambiguous unlike telegram.csv's date column.
             F.try_to_timestamp(F.col("date")).alias("date"),
             F.lit(technique).alias("source_technique"),
+            F.col("load_dt"),
+            F.col("source_format"),
+            F.col("source_file"),
+            F.col("run_id"),
         )
         typed_dfs.append(typed)
 

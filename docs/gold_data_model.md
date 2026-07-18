@@ -31,6 +31,40 @@ unrelated measurement processes.
 | `gold_monthly_traffic_summary` | Materialized view | — (grain is `location_key`+`year`+`month`) | — | 140 rows (14 location groups incl. NULL x 10 months) |
 | `gold_street_risk_summary` | Materialized view | — (grain is `street_id`+`year`+`month`) | — | 360 rows (36 streets x 10 months) |
 
+## Audit column lineage: carried through from Bronze, not regenerated per layer
+
+`load_dt`/`source_format`/`source_file`/`run_id` originate once, at Bronze
+ingestion, and are carried through Silver and into every Gold table
+unchanged -- Gold no longer calls `add_audit_columns()` to stamp its own
+fresh values. Two categories of exception:
+
+- **Dimensions and facts carry through their upstream source's audit
+  columns.** `Dim_Location`/`Dim_Street` select them straight from
+  `silver_locations`/`stg_dim_street_scd2` (itself carried through
+  `AUTO CDC FROM SNAPSHOT` from `silver_streets` -- confirmed live that
+  untracked source columns pass through the CDC flow unchanged).
+  `Fact_Traffic_Counts`/`Fact_Street_Conditions` carry through their
+  *fact-side* table's columns specifically (`silver_traffic`/
+  `silver_environment`), not `Dim_Location`/`Dim_Street`/`Dim_Date`'s --
+  those are pure lookups in the join, and a fact row's real lineage is the
+  fact record it came from, not whichever dimension row it resolved to.
+- **`Dim_Date` and the two aggregate tables keep their own "generated"
+  stamp.** `Dim_Date` has no Bronze file behind it at all (a calendar is
+  computed, not ingested). `gold_monthly_traffic_summary`/
+  `gold_street_risk_summary` are `GROUP BY` aggregates over potentially
+  millions of source rows each -- there is no single row's lineage to carry
+  through an aggregation, so these keep `source_format="generated"` with a
+  fresh `load_dt`/`run_id` reflecting when the aggregate was actually
+  computed.
+
+Verified live post-full-refresh: every carried-through table's `load_dt`
+reflects the real original Bronze/Silver ingestion time (`2026-07-13`), not
+the Gold refresh's own run time, and `Fact_Traffic_Counts.source_file`
+correctly varies across all 4 real Bronze files (`chunk1.csv`/`chunk2.csv`/
+`chunk3.json`/`chunk4.xml`) depending on which technique a given row came
+from -- confirming per-row lineage survives the join, not just a single
+fixed value at the table level.
+
 ## Foreign keys (intended relationships)
 
 | From | Column | To | Column |

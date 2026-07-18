@@ -8,6 +8,7 @@ Run locally:
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,14 @@ def spark():
     session.stop()
 
 
+_TRAFFIC_COLS = ["id", "location", "enter", "exit", "date", "source_technique", "load_dt", "source_format", "source_file", "run_id"]  # noqa: E501
+
+# Fixed silver_traffic audit values -- proves build_fact_traffic_counts
+# carries them through from the fact-side table unchanged rather than
+# regenerating (see fact_traffic_counts.py's build_fact_traffic_counts Notes).
+_AUDIT_VALUES = (datetime(2024, 1, 1, 12, 0, 0), "delta", "silver_traffic", "test-run-id")
+
+
 def _dim_location_df(spark):
     return spark.createDataFrame([(1, 1, 38.9, -0.5), (2, 2, 38.91, -0.51)], ["location_key", "location", "lat", "lon"])
 
@@ -39,10 +48,10 @@ def test_row_count_matches_input_exactly_no_fan_out(spark):
 
     traffic_df = spark.createDataFrame(
         [
-            (100, 1, 5, 3, "2024-01-01T10:00:00", "copyinto"),
-            (101, 2, 6, 4, "2024-01-02T11:00:00", "dlt"),
+            (100, 1, 5, 3, "2024-01-01T10:00:00", "copyinto") + _AUDIT_VALUES,
+            (101, 2, 6, 4, "2024-01-02T11:00:00", "dlt") + _AUDIT_VALUES,
         ],
-        ["id", "location", "enter", "exit", "date", "source_technique"],
+        _TRAFFIC_COLS,
     )
     result = build_fact_traffic_counts(traffic_df, _dim_location_df(spark), _dim_date_df(spark))
 
@@ -53,8 +62,8 @@ def test_schema_matches_expected_shape(spark):
     from pipelines.gold.fact_traffic_counts import build_fact_traffic_counts
 
     traffic_df = spark.createDataFrame(
-        [(100, 1, 5, 3, "2024-01-01T10:00:00", "copyinto")],
-        ["id", "location", "enter", "exit", "date", "source_technique"],
+        [(100, 1, 5, 3, "2024-01-01T10:00:00", "copyinto") + _AUDIT_VALUES],
+        _TRAFFIC_COLS,
     )
     result = build_fact_traffic_counts(traffic_df, _dim_location_df(spark), _dim_date_df(spark))
 
@@ -69,8 +78,8 @@ def test_location_key_and_date_key_resolve_correctly_when_matched(spark):
     from pipelines.gold.fact_traffic_counts import build_fact_traffic_counts
 
     traffic_df = spark.createDataFrame(
-        [(100, 2, 5, 3, "2024-01-02T10:00:00", "copyinto")],
-        ["id", "location", "enter", "exit", "date", "source_technique"],
+        [(100, 2, 5, 3, "2024-01-02T10:00:00", "copyinto") + _AUDIT_VALUES],
+        _TRAFFIC_COLS,
     )
     row = build_fact_traffic_counts(traffic_df, _dim_location_df(spark), _dim_date_df(spark)).collect()[0]
 
@@ -85,10 +94,29 @@ def test_an_unresolvable_location_produces_null_key_not_a_dropped_row(spark):
     from pipelines.gold.fact_traffic_counts import build_fact_traffic_counts
 
     traffic_df = spark.createDataFrame(
-        [(100, 999, 5, 3, "2024-01-01T10:00:00", "copyinto")],
-        ["id", "location", "enter", "exit", "date", "source_technique"],
+        [(100, 999, 5, 3, "2024-01-01T10:00:00", "copyinto") + _AUDIT_VALUES],
+        _TRAFFIC_COLS,
     )
     result = build_fact_traffic_counts(traffic_df, _dim_location_df(spark), _dim_date_df(spark))
 
     assert result.count() == 1
     assert result.collect()[0]["location_key"] is None
+
+
+def test_audit_columns_are_carried_through_from_silver_traffic_not_regenerated(spark):
+    """The real fix this test guards: Gold used to call add_audit_columns()
+    fresh, overwriting silver_traffic's original lineage. Now it must select
+    silver_traffic's own audit values straight through unchanged, not
+    Dim_Location's or Dim_Date's (pure lookups here)."""
+    from pipelines.gold.fact_traffic_counts import build_fact_traffic_counts
+
+    traffic_df = spark.createDataFrame(
+        [(100, 1, 5, 3, "2024-01-01T10:00:00", "copyinto") + _AUDIT_VALUES],
+        _TRAFFIC_COLS,
+    )
+    row = build_fact_traffic_counts(traffic_df, _dim_location_df(spark), _dim_date_df(spark)).collect()[0]
+
+    assert row["load_dt"] == _AUDIT_VALUES[0]
+    assert row["source_format"] == "delta"
+    assert row["source_file"] == "silver_traffic"
+    assert row["run_id"] == "test-run-id"

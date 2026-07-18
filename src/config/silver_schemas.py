@@ -9,6 +9,20 @@ from __future__ import annotations
 
 from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType, TimestampType
 
+# The 4 audit columns are carried through from Bronze unchanged (same names/
+# types utils.audit.add_audit_columns already writes), not regenerated here --
+# Silver re-stamping its own load_dt/run_id would overwrite the original
+# ingestion lineage (which raw file, which Bronze run) with Silver's own
+# processing time, losing traceability back to the source. Appended as a
+# shared list (not repeated per schema) so every Silver table's audit columns
+# stay identical by construction.
+_AUDIT_COLUMNS = [
+    StructField("load_dt", TimestampType(), nullable=True),
+    StructField("source_format", StringType(), nullable=True),
+    StructField("source_file", StringType(), nullable=True),
+    StructField("run_id", StringType(), nullable=True),
+]
+
 # Real observed ranges: location 1-14, 6-decimal lat/long precision.
 SILVER_LOCATIONS_SCHEMA = StructType(
     [
@@ -16,6 +30,7 @@ SILVER_LOCATIONS_SCHEMA = StructType(
         StructField("latitude", DoubleType(), nullable=True),
         StructField("longitude", DoubleType(), nullable=True),
     ]
+    + _AUDIT_COLUMNS
 )
 
 SILVER_LOCATIONS_REJECTED_SCHEMA = StructType(
@@ -33,6 +48,7 @@ SILVER_STREETS_SCHEMA = StructType(
         StructField("dangerous", DoubleType(), nullable=True),
         StructField("street_id", IntegerType(), nullable=True),
     ]
+    + _AUDIT_COLUMNS
 )
 
 SILVER_STREETS_REJECTED_SCHEMA = StructType(
@@ -52,6 +68,7 @@ SILVER_TRAFFIC_SCHEMA = StructType(
         StructField("date", TimestampType(), nullable=True),
         StructField("source_technique", StringType(), nullable=True),
     ]
+    + _AUDIT_COLUMNS
 )
 
 SILVER_TRAFFIC_REJECTED_SCHEMA = StructType(
@@ -71,6 +88,7 @@ SILVER_ENVIRONMENT_SCHEMA = StructType(
         StructField("light", DoubleType(), nullable=True),
         StructField("raining", DoubleType(), nullable=True),
     ]
+    + _AUDIT_COLUMNS
 )
 
 SILVER_ENVIRONMENT_REJECTED_SCHEMA = StructType(
@@ -89,6 +107,7 @@ SILVER_TELEGRAM_SCHEMA = StructType(
         StructField("message", StringType(), nullable=True),
         StructField("event_timestamp", TimestampType(), nullable=True),
     ]
+    + _AUDIT_COLUMNS
 )
 
 SILVER_TELEGRAM_REJECTED_SCHEMA = StructType(
