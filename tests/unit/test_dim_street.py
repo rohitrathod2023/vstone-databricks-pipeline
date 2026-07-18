@@ -12,6 +12,7 @@ Run locally:
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -33,7 +34,7 @@ def spark():
 def _cdc_schema():
     """Explicit schema, not inference -- a synthetic row with __END_AT=None
     can't have its type inferred from data alone."""
-    from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType
+    from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType, TimestampType
 
     return StructType(
         [
@@ -45,15 +46,26 @@ def _cdc_schema():
             StructField("dangerous", DoubleType()),
             StructField("__START_AT", StringType()),
             StructField("__END_AT", StringType()),
+            StructField("load_dt", TimestampType()),
+            StructField("source_format", StringType()),
+            StructField("source_file", StringType()),
+            StructField("run_id", StringType()),
         ]
     )
+
+
+# Fixed silver_streets audit values appended to every synthetic row below --
+# proves build_dim_street carries them through from stg_dim_street_scd2
+# unchanged rather than regenerating (see dim_street.py's build_dim_street
+# Notes).
+_AUDIT_VALUES = (datetime(2024, 1, 1, 12, 0, 0), "delta", "silver_streets", "test-run-id")
 
 
 def test_schema_matches_expected_shape(spark):
     from pipelines.gold.dim_street import build_dim_street
 
     df = spark.createDataFrame(
-        [(1, "CV-645A", 574, 38.98492, -0.538044, 0.5, "2026-01-01T00:00:00", None)], _cdc_schema()
+        [(1, "CV-645A", 574, 38.98492, -0.538044, 0.5, "2026-01-01T00:00:00", None) + _AUDIT_VALUES], _cdc_schema()
     )
     result = build_dim_street(df)
 
@@ -68,7 +80,7 @@ def test_a_row_with_null_end_at_is_current(spark):
     from pipelines.gold.dim_street import build_dim_street
 
     df = spark.createDataFrame(
-        [(1, "CV-645A", 574, 38.98492, -0.538044, 0.5, "2026-01-01T00:00:00", None)], _cdc_schema()
+        [(1, "CV-645A", 574, 38.98492, -0.538044, 0.5, "2026-01-01T00:00:00", None) + _AUDIT_VALUES], _cdc_schema()
     )
     row = build_dim_street(df).collect()[0]
 
@@ -82,7 +94,10 @@ def test_a_row_with_a_real_end_at_is_not_current(spark):
     from pipelines.gold.dim_street import build_dim_street
 
     df = spark.createDataFrame(
-        [(1, "CV-645A", 574, 38.98492, -0.538044, 0.5, "2026-01-01T00:00:00", "2026-02-01T00:00:00")],
+        [
+            (1, "CV-645A", 574, 38.98492, -0.538044, 0.5, "2026-01-01T00:00:00", "2026-02-01T00:00:00")
+            + _AUDIT_VALUES
+        ],
         _cdc_schema(),
     )
     row = build_dim_street(df).collect()[0]
@@ -100,9 +115,9 @@ def test_street_key_is_contiguous_unique_int_ordered_by_street_id_and_start_at(s
     from pipelines.gold.dim_street import build_dim_street
 
     rows = [
-        (3, "Street C", 100, 38.9, -0.5, 0.3, "2026-01-01T00:00:00", None),
-        (1, "Street A", 574, 38.98492, -0.538044, 0.5, "2026-01-01T00:00:00", None),
-        (2, "Street B", 194, 38.985471, -0.536866, 0.7, "2026-01-01T00:00:00", None),
+        (3, "Street C", 100, 38.9, -0.5, 0.3, "2026-01-01T00:00:00", None) + _AUDIT_VALUES,
+        (1, "Street A", 574, 38.98492, -0.538044, 0.5, "2026-01-01T00:00:00", None) + _AUDIT_VALUES,
+        (2, "Street B", 194, 38.985471, -0.536866, 0.7, "2026-01-01T00:00:00", None) + _AUDIT_VALUES,
     ]
     df = spark.createDataFrame(rows, _cdc_schema())
     result = build_dim_street(df)
@@ -111,6 +126,24 @@ def test_street_key_is_contiguous_unique_int_ordered_by_street_id_and_start_at(s
     assert [r["street_key"] for r in ordered] == [1, 2, 3]
     assert [r["street_id"] for r in ordered] == [1, 2, 3]  # ordered by street_id, so key order matches
     assert dict(result.dtypes)["street_key"] == IntegerType().simpleString()
+
+
+def test_audit_columns_are_carried_through_from_stg_dim_street_scd2_not_regenerated(spark):
+    """The real fix this test guards: Gold used to call add_audit_columns()
+    fresh here too, overwriting the audit lineage carried through the CDC
+    flow from silver_streets. Now it must select those values straight
+    through unchanged."""
+    from pipelines.gold.dim_street import build_dim_street
+
+    df = spark.createDataFrame(
+        [(1, "CV-645A", 574, 38.98492, -0.538044, 0.5, "2026-01-01T00:00:00", None) + _AUDIT_VALUES], _cdc_schema()
+    )
+    row = build_dim_street(df).collect()[0]
+
+    assert row["load_dt"] == _AUDIT_VALUES[0]
+    assert row["source_format"] == "delta"
+    assert row["source_file"] == "silver_streets"
+    assert row["run_id"] == "test-run-id"
 
 
 def test_tracked_columns_covers_dangerous_and_the_other_scd2_attributes():

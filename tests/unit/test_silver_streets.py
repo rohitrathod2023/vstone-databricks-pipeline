@@ -10,6 +10,7 @@ Run locally:
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -29,7 +30,16 @@ def spark():
 
 
 def _cols():
-    return ["street", "long", "latitude", "longitude", "dangerous", "street_id"]
+    return [
+        "street", "long", "latitude", "longitude", "dangerous", "street_id",
+        "load_dt", "source_format", "source_file", "run_id",
+    ]
+
+
+# Fixed Bronze audit values appended to every synthetic row below -- proves
+# build_checked_streets carries them through unchanged rather than
+# regenerating (see streets.py's build_checked_streets Notes).
+_AUDIT_VALUES = (datetime(2024, 1, 1, 12, 0, 0), "csv", "streets_list.csv", "test-run-id")
 
 
 def test_valid_output_schema_matches_silver_streets_schema_exactly(spark):
@@ -39,7 +49,7 @@ def test_valid_output_schema_matches_silver_streets_schema_exactly(spark):
     from pipelines.silver.quarantine import valid_rows
     from pipelines.silver.streets import build_checked_streets
 
-    df = spark.createDataFrame([("CV-645A", "574", "38.98492", "-0.538044", "0.5", "1")], _cols())
+    df = spark.createDataFrame([("CV-645A", "574", "38.98492", "-0.538044", "0.5", "1") + _AUDIT_VALUES], _cols())
     valid = valid_rows(build_checked_streets(df))
 
     assertSchemaEqual(valid.schema, SILVER_STREETS_SCHEMA)
@@ -52,7 +62,7 @@ def test_rejected_output_schema_matches_silver_streets_rejected_schema(spark):
     from pipelines.silver.quarantine import rejected_rows
     from pipelines.silver.streets import build_checked_streets
 
-    df = spark.createDataFrame([("Bad Street", "100", "0.0", "0.0", "0.5", "2")], _cols())
+    df = spark.createDataFrame([("Bad Street", "100", "0.0", "0.0", "0.5", "2") + _AUDIT_VALUES], _cols())
     rejected = rejected_rows(build_checked_streets(df))
 
     assertSchemaEqual(rejected.schema, SILVER_STREETS_REJECTED_SCHEMA)
@@ -64,7 +74,7 @@ def test_long_is_cast_to_int_and_not_confused_with_longitude(spark):
     from pipelines.silver.quarantine import valid_rows
     from pipelines.silver.streets import build_checked_streets
 
-    df = spark.createDataFrame([("CV-645A", "574", "38.98492", "-0.538044", "0.5", "1")], _cols())
+    df = spark.createDataFrame([("CV-645A", "574", "38.98492", "-0.538044", "0.5", "1") + _AUDIT_VALUES], _cols())
     row = valid_rows(build_checked_streets(df)).collect()[0]
 
     assert row["long"] == 574
@@ -76,7 +86,7 @@ def test_street_name_whitespace_is_normalized(spark):
     from pipelines.silver.streets import build_checked_streets
 
     df = spark.createDataFrame(
-        [("  Corts   Valencianes  1A  ", "194", "38.985471", "-0.536866", "0.7", "3")], _cols()
+        [("  Corts   Valencianes  1A  ", "194", "38.985471", "-0.536866", "0.7", "3") + _AUDIT_VALUES], _cols()
     )
     row = valid_rows(build_checked_streets(df)).collect()[0]
 
@@ -87,7 +97,7 @@ def test_valid_rows_are_not_quarantined(spark):
     from pipelines.silver.quarantine import rejected_rows, valid_rows
     from pipelines.silver.streets import build_checked_streets
 
-    df = spark.createDataFrame([("CV-645A", "574", "38.98492", "-0.538044", "0.5", "1")], _cols())
+    df = spark.createDataFrame([("CV-645A", "574", "38.98492", "-0.538044", "0.5", "1") + _AUDIT_VALUES], _cols())
     checked = build_checked_streets(df)
 
     assert valid_rows(checked).count() == 1
@@ -98,7 +108,7 @@ def test_bad_coordinates_alone_is_quarantined_with_that_reason(spark):
     from pipelines.silver.quarantine import rejected_rows
     from pipelines.silver.streets import build_checked_streets
 
-    df = spark.createDataFrame([("Bad Coords", "100", "0.0", "0.0", "0.5", "2")], _cols())
+    df = spark.createDataFrame([("Bad Coords", "100", "0.0", "0.0", "0.5", "2") + _AUDIT_VALUES], _cols())
     rejected_row = rejected_rows(build_checked_streets(df)).collect()[0]
 
     assert rejected_row["rejection_reason"] == "invalid_coordinates: latitude and longitude are both 0"
@@ -108,7 +118,7 @@ def test_out_of_range_dangerous_alone_is_quarantined_with_that_reason(spark):
     from pipelines.silver.quarantine import rejected_rows
     from pipelines.silver.streets import build_checked_streets
 
-    df = spark.createDataFrame([("Too Dangerous", "300", "38.99", "-0.53", "1.5", "5")], _cols())
+    df = spark.createDataFrame([("Too Dangerous", "300", "38.99", "-0.53", "1.5", "5") + _AUDIT_VALUES], _cols())
     rejected_row = rejected_rows(build_checked_streets(df)).collect()[0]
 
     assert rejected_row["rejection_reason"] == "dangerous_out_of_range: dangerous score is outside [0, 1]"
@@ -120,7 +130,7 @@ def test_a_row_failing_both_rules_names_both_reasons(spark):
     from pipelines.silver.quarantine import rejected_rows
     from pipelines.silver.streets import build_checked_streets
 
-    df = spark.createDataFrame([("Both Bad", "100", "0.0", "0.0", "-0.2", "6")], _cols())
+    df = spark.createDataFrame([("Both Bad", "100", "0.0", "0.0", "-0.2", "6") + _AUDIT_VALUES], _cols())
     rejected_row = rejected_rows(build_checked_streets(df)).collect()[0]
 
     assert rejected_row["rejection_reason"] == (

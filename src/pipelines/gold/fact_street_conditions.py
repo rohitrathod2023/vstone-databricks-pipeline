@@ -8,8 +8,6 @@ from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
-from utils.audit import add_audit_columns
-
 
 def build_fact_street_conditions(
     environment_df: DataFrame, dim_street_df: DataFrame, dim_date_df: DataFrame
@@ -18,7 +16,7 @@ def build_fact_street_conditions(
 
     Args:
         environment_df: silver_environment -- the ACCEPTED rows only (not
-            silver_environment_rejected).
+            silver_environment_rejected), plus its own audit columns.
         dim_street_df: Dim_Street's full version history (street_id,
             street_key, __START_AT, __END_AT, ...) -- not filtered to
             is_current, since a fact from an earlier date must resolve to
@@ -27,7 +25,8 @@ def build_fact_street_conditions(
 
     Returns:
         DataFrame with street_key, date_key, noise, pollution, light,
-        raining, plus the 4 standard audit columns.
+        raining, plus the 4 audit columns carried through from
+        silver_environment (the driving/fact-side table) unchanged.
 
     Notes:
         street_key resolution is a RANGE join on Dim_Street's __START_AT/
@@ -60,6 +59,11 @@ def build_fact_street_conditions(
         LEFT joins throughout, same reasoning as Fact_Traffic_Counts: an
         inner join would silently drop any row that fails to resolve,
         making a row-count mismatch undetectable.
+
+        Audit columns come from silver_environment (e.*), not Dim_Street or
+        Dim_Date, same reasoning as Fact_Traffic_Counts -- the fact-side
+        record is the row's real lineage, not whichever dimension version
+        it resolved to. Selected straight through, not regenerated.
     """
     earliest_version_window = Window.partitionBy("street_id")
     dim_street_with_earliest = dim_street_df.withColumn(
@@ -92,6 +96,10 @@ def build_fact_street_conditions(
             F.col("e.pollution").alias("pollution"),
             F.col("e.light").alias("light"),
             F.col("e.raining").alias("raining"),
+            F.col("e.load_dt").alias("load_dt"),
+            F.col("e.source_format").alias("source_format"),
+            F.col("e.source_file").alias("source_file"),
+            F.col("e.run_id").alias("run_id"),
         )
     )
-    return add_audit_columns(joined, source_format="delta", source_file="silver_environment")
+    return joined

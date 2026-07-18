@@ -9,6 +9,7 @@ Run locally:
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -27,12 +28,23 @@ def spark():
     session.stop()
 
 
+# Fixed silver_locations audit values -- proves build_dim_location carries
+# them through unchanged rather than regenerating (see dim_location.py's
+# build_dim_location Notes).
+_AUDIT_VALUES = (datetime(2024, 1, 1, 12, 0, 0), "delta", "silver_locations", "test-run-id")
+
+
 def _silver_locations_df(spark):
     """13 rows, matching the real silver_locations shape (location=7's bad
     row already excluded, since Silver rejects it before this table ever
     sees it)."""
-    rows = [(loc, 38.9 + loc * 0.01, -0.5 - loc * 0.01) for loc in [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14]]
-    return spark.createDataFrame(rows, ["location", "latitude", "longitude"])
+    rows = [
+        (loc, 38.9 + loc * 0.01, -0.5 - loc * 0.01) + _AUDIT_VALUES
+        for loc in [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14]
+    ]
+    return spark.createDataFrame(
+        rows, ["location", "latitude", "longitude", "load_dt", "source_format", "source_file", "run_id"]
+    )
 
 
 def test_row_count_matches_silver_locations_exactly(spark):
@@ -90,3 +102,19 @@ def test_latitude_and_longitude_are_carried_through_unchanged(spark):
 
     assert row["latitude"] == 38.91
     assert row["longitude"] == -0.51
+
+
+def test_audit_columns_are_carried_through_from_silver_not_regenerated(spark):
+    """The real fix this test guards: Gold used to call add_audit_columns()
+    fresh, overwriting silver_locations' original Bronze-ingestion lineage
+    with Gold's own load_dt/run_id. Now it must select silver_locations'
+    own audit values straight through unchanged."""
+    from pipelines.gold.dim_location import build_dim_location
+
+    df = build_dim_location(_silver_locations_df(spark))
+    row = df.filter("location = 1").collect()[0]
+
+    assert row["load_dt"] == _AUDIT_VALUES[0]
+    assert row["source_format"] == "delta"
+    assert row["source_file"] == "silver_locations"
+    assert row["run_id"] == "test-run-id"

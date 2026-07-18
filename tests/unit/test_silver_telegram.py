@@ -9,6 +9,7 @@ Run locally:
 from __future__ import annotations
 
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -28,11 +29,17 @@ def spark():
 
 
 def _cols():
-    return ["message", "date", "hour"]
+    return ["message", "date", "hour", "load_dt", "source_format", "source_file", "run_id"]
+
+
+# Fixed Bronze audit values appended to every synthetic row -- proves
+# build_checked_telegram carries them through unchanged rather than
+# regenerating (see telegram.py's build_checked_telegram Notes).
+_AUDIT_VALUES = (datetime(2024, 1, 1, 12, 0, 0), "csv", "telegram.csv", "test-run-id")
 
 
 def _row(message="Traffic is bad today", date="15/07/2026", hour="14:30:00"):
-    return (message, date, hour)
+    return (message, date, hour) + _AUDIT_VALUES
 
 
 def test_valid_output_schema_matches_silver_telegram_schema_exactly(spark):

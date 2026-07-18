@@ -38,7 +38,8 @@ def build_checked_environment(bronze_df: DataFrame) -> DataFrame:
 
     Returns:
         DataFrame with strictly-typed columns (street_id: int, date:
-        timestamp, noise/pollution/light/raining: double) plus a
+        timestamp, noise/pollution/light/raining: double), the 4 audit
+        columns carried through from Bronze unchanged, plus a
         rejection_reason column. silver_environment and
         silver_environment_rejected are both derived by filtering this same
         DataFrame (see quarantine.valid_rows/rejected_rows).
@@ -66,6 +67,10 @@ def build_checked_environment(bronze_df: DataFrame) -> DataFrame:
         hardcoding "today's observed max" as a rejection rule would repeat
         the exact mistake Phase 4 deliberately avoided for silver_traffic's
         location range.
+
+        load_dt/source_format/source_file/run_id are selected straight
+        through from bronze_df, not regenerated -- see locations.py's
+        build_checked_locations for why.
     """
     standardized = apply_header_standardization(bronze_df)
     typed = standardized.select(
@@ -75,6 +80,10 @@ def build_checked_environment(bronze_df: DataFrame) -> DataFrame:
         F.col("pollution").cast("double"),
         F.col("light").cast("double"),
         F.col("raining").cast("double"),
+        F.col("load_dt"),
+        F.col("source_format"),
+        F.col("source_file"),
+        F.col("run_id"),
     )
     deduped = typed.dropDuplicates(["street_id", "date"])
     return deduped.withColumn("rejection_reason", build_rejection_reason_expr(ENVIRONMENT_QUARANTINE_RULES))

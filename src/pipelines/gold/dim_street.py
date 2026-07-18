@@ -22,8 +22,6 @@ from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 
-from utils.audit import add_audit_columns
-
 # Columns AUTO CDC FROM SNAPSHOT tracks for history -- a new SCD2 version is
 # created whenever any of these change. latitude/longitude are tracked too
 # for completeness even though they're not expected to ever actually change.
@@ -36,12 +34,16 @@ def build_dim_street(stg_dim_street_scd2_df: DataFrame) -> DataFrame:
     Args:
         stg_dim_street_scd2_df: Full history from stg_dim_street_scd2 (a
             plain batch read, not spark.readStream) -- every SCD2 version,
-            not just the current one.
+            not just the current one. Carries silver_streets' own audit
+            columns through, since they aren't part of TRACKED_COLUMNS and
+            AUTO CDC FROM SNAPSHOT passes untracked source columns through
+            to its target unchanged.
 
     Returns:
         DataFrame with street_key (surrogate key), street_id, street, long,
         latitude, longitude, dangerous, __START_AT, __END_AT, is_current,
-        plus the 4 standard audit columns.
+        plus the 4 audit columns carried through from silver_streets
+        unchanged.
 
     Notes:
         street_key uses row_number() OVER (ORDER BY street_id, __START_AT),
@@ -60,8 +62,14 @@ def build_dim_street(stg_dim_street_scd2_df: DataFrame) -> DataFrame:
 
         is_current is derived from __END_AT IS NULL -- Databricks' own
         convention for "this is the currently active SCD2 version."
+
+        load_dt/source_format/source_file/run_id are selected straight
+        through from stg_dim_street_scd2_df, not regenerated via
+        add_audit_columns() -- see dim_location.py's build_dim_location for
+        why. Each SCD2 version carries the audit columns from whichever
+        silver_streets snapshot produced that version.
     """
-    with_key = stg_dim_street_scd2_df.select(
+    return stg_dim_street_scd2_df.select(
         F.row_number().over(Window.orderBy("street_id", "__START_AT")).cast("int").alias("street_key"),
         F.col("street_id"),
         F.col("street"),
@@ -72,5 +80,8 @@ def build_dim_street(stg_dim_street_scd2_df: DataFrame) -> DataFrame:
         F.col("__START_AT"),
         F.col("__END_AT"),
         F.col("__END_AT").isNull().alias("is_current"),
+        F.col("load_dt"),
+        F.col("source_format"),
+        F.col("source_file"),
+        F.col("run_id"),
     )
-    return add_audit_columns(with_key, source_format="delta", source_file="stg_dim_street_scd2")
