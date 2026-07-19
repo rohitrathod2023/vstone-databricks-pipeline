@@ -116,14 +116,17 @@ Two materialized views roll the fact tables up to a monthly grain:
   yet to detect. This becomes a meaningful signal once a street's
   `dangerous` score actually changes across a `Dim_Street` refresh.
 
-Both aggregates are wired into their own DABs job, `gold_aggregates_job`
-(`resources/jobs/gold_aggregates_job.yml`), named by function rather than
-by build day. Since every Gold table lives in the one `gold_dlt_pipeline`
-DLT pipeline, this job's `pipeline_task` targets the same pipeline as
-`gold_job` — DLT's own dependency graph and incremental engine ensure nothing
-already up to date gets wastefully recomputed, and the job exists as its own
-named, function-scoped entry point for scheduling the aggregate refresh
-independently of the raw dimension/fact build.
+Both aggregates run as part of `gold_job` (`resources/jobs/gold_job.yml`) --
+there is no separate aggregates job. Every Gold table (dimensions, facts,
+and both aggregates) lives in the one `gold_dlt_pipeline` DLT pipeline, so a
+`pipeline_task` is all-or-nothing at the job level: DLT's own dependency
+graph and incremental engine decide internally what actually needs
+recomputing on a refresh, and there's no way to scope a job to just the
+aggregate tables. An earlier `gold_aggregates_job` existed briefly as a
+separate, identically-configured job pointing at the same pipeline -- pure
+duplication with `gold_job`, not a narrower trigger -- and was removed for
+that reason. Bronze and Silver each have exactly one job per pipeline; Gold
+now follows the same convention.
 
 ## Constraint enforcement — real, registered UC constraints, declared at table-creation time
 
