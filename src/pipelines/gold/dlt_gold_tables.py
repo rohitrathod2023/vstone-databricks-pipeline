@@ -204,6 +204,13 @@ def fact_traffic_counts():
     name="fact_street_conditions",
     comment=_FACT_STREET_CONDITIONS_CFG["description"],
     schema=FACT_STREET_CONDITIONS_SCHEMA,
+    # Liquid Clustering on the two columns most likely to be filtered/joined
+    # on (see docs/liquid_clustering_benchmark.md) -- ALTER TABLE ... CLUSTER
+    # BY cannot be applied post-hoc to this table (same
+    # EXPECT_TABLE_NOT_VIEW.NO_ALTERNATIVE limitation as PK/FK constraints,
+    # confirmed live), so cluster_by is declared here instead, at
+    # table-creation time, same pattern as schema=.
+    cluster_by=["street_key", "date_key"],
 )
 def fact_street_conditions():
     environment_df = spark.table(_ENVIRONMENT_TABLE)
