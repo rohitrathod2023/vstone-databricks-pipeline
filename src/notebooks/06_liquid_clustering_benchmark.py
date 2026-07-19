@@ -2,10 +2,10 @@
 # MAGIC %md
 # MAGIC # Liquid Clustering vs. partitioning + Z-ordering benchmark — Day 7
 # MAGIC Real, measured comparison on `fact_street_conditions` (~87.8M rows) --
-# MAGIC the biggest table in Gold most likely to be filtered/joined on
-# MAGIC `street_key`/`date_key` in real queries. `fact_traffic_counts` is larger
-# MAGIC in row count but has a simpler, straight-aggregation access pattern, so
-# MAGIC it's not used here.
+# MAGIC the biggest table in Gold (bigger than `fact_traffic_counts`'s 24.68M
+# MAGIC rows) and the one most likely to be filtered/joined on
+# MAGIC `street_key`/`date_key` in real queries. `fact_traffic_counts` has a
+# MAGIC simpler, straight-aggregation access pattern, so it's not used here.
 # MAGIC
 # MAGIC Liquid Clustering itself is applied directly to `fact_street_conditions`
 # MAGIC via `cluster_by=["street_key", "date_key"]` on its `@dlt.table` decorator
