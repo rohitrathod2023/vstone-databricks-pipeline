@@ -56,15 +56,27 @@ import uuid  # noqa: E402
 
 from utils.config_loader import get_source_config  # noqa: E402
 
+# Load configuration
 STREETS_TABLE = get_source_config("silver_streets", env=env)["target_table"]
 ENVIRONMENT_TABLE = get_source_config("silver_environment", env=env)["target_table"]
 STREET_ID = 7
 OLD_DANGEROUS = 0.3
 NEW_DANGEROUS = 0.7
 
-print(f"Streets source: {STREETS_TABLE}")
-print(f"Environment source: {ENVIRONMENT_TABLE}")
-print(f"street_id={STREET_ID}")
+print("=" * 80)
+print("SCD2 DEMO CONFIGURATION")
+print("=" * 80)
+print(f"\nCatalog: {catalog}")
+print(f"Environment: {env}\n")
+print("Source tables:")
+print(f"  Streets: {STREETS_TABLE}")
+print(f"  Environment: {ENVIRONMENT_TABLE}\n")
+print("Target street:")
+print(f"  street_id = {STREET_ID} (PalasietA)")
+print(f"  Current dangerous: {OLD_DANGEROUS}")
+print(f"  New dangerous: {NEW_DANGEROUS}")
+print(f"  Threshold crossed: {OLD_DANGEROUS} < 0.5 -> {NEW_DANGEROUS} > 0.5 (safe to dangerous)")
+print("=" * 80 + "\n")
 
 # COMMAND ----------
 
@@ -73,32 +85,82 @@ print(f"street_id={STREET_ID}")
 
 # COMMAND ----------
 
+print("=" * 80)
+print("STEP 1: SOURCE TABLE UPDATE (IDEMPOTENT)")
+print("=" * 80)
+print(f"\nTarget table: {STREETS_TABLE}")
+print(f"Target street: street_id = {STREET_ID} (PalasietA)")
+print(f"Expected change: dangerous {OLD_DANGEROUS} -> {NEW_DANGEROUS}\n")
+
+# Check current state
 current_row = spark.sql(f"SELECT * FROM {STREETS_TABLE} WHERE street_id = {STREET_ID}").collect()
 if len(current_row) != 1:
     raise RuntimeError(f"STOP: expected exactly 1 row for street_id={STREET_ID}, found {len(current_row)}.")
 current_dangerous = current_row[0]["dangerous"]
-print(f"Current dangerous value: {current_dangerous}")
 
+print("Current state:")
+print("-" * 80)
+current_df = spark.createDataFrame([current_row[0].asDict()])
+display(current_df)
+
+# Apply or confirm update
 if current_dangerous == OLD_DANGEROUS:
+    print(f"\nCurrent dangerous value: {current_dangerous}")
+    print("Status: UPDATE required\n")
+    print("Executing UPDATE...")
     spark.sql(f"UPDATE {STREETS_TABLE} SET dangerous = {NEW_DANGEROUS} WHERE street_id = {STREET_ID}")
-    print(f"UPDATE applied: street_id={STREET_ID} dangerous {OLD_DANGEROUS} -> {NEW_DANGEROUS}")
+    print(f"UPDATE completed: dangerous {OLD_DANGEROUS} -> {NEW_DANGEROUS}")
 elif current_dangerous == NEW_DANGEROUS:
-    print("Already applied in an earlier run -- no change needed.")
+    print(f"\nCurrent dangerous value: {current_dangerous}")
+    print("Status: Already applied in an earlier run -- no change needed")
 else:
     raise RuntimeError(
         f"STOP: street_id={STREET_ID}'s dangerous value is {current_dangerous}, "
         f"neither the expected old ({OLD_DANGEROUS}) nor new ({NEW_DANGEROUS}) value."
     )
 
+# Verify final state
 after_row = spark.sql(f"SELECT * FROM {STREETS_TABLE} WHERE street_id = {STREET_ID}").collect()[0].asDict()
-print(f"Confirmed current state: {after_row}")
+print("\nFinal state after UPDATE:")
+print("-" * 80)
+after_df = spark.createDataFrame([after_row])
+display(after_df)
+
 if after_row["dangerous"] != NEW_DANGEROUS:
     raise RuntimeError(f"STOP: expected dangerous={NEW_DANGEROUS}, found {after_row['dangerous']}.")
 
+# Verify table row count unchanged
 row_count = spark.table(STREETS_TABLE).count()
 if row_count != 36:
     raise RuntimeError(f"STOP: expected silver_streets row count to stay 36, found {row_count}.")
-print(f"{STREETS_TABLE} row count (unchanged): {row_count}")
+
+print(f"\nValidation: Table row count unchanged at {row_count}")
+print("=" * 80 + "\n")
+
+# COMMAND ----------
+
+# DBTITLE 1,Before/After Comparison
+# Create comparison summary
+print("\n" + "=" * 80)
+print("CHANGE SUMMARY: DANGEROUS VALUE")
+print("=" * 80)
+print()
+
+comparison_data = [
+    ("Before", OLD_DANGEROUS, "Safe" if OLD_DANGEROUS < 0.5 else "Dangerous"),
+    ("After", NEW_DANGEROUS, "Safe" if NEW_DANGEROUS < 0.5 else "Dangerous"),
+    ("Change", NEW_DANGEROUS - OLD_DANGEROUS, "Threshold crossed: safe -> dangerous" if OLD_DANGEROUS < 0.5 <= NEW_DANGEROUS else "")
+]
+
+comparison_df = spark.createDataFrame(
+    comparison_data,
+    ["State", "Dangerous Value", "Classification"]
+)
+
+print(f"Street: street_id = {STREET_ID} (PalasietA)")
+print(f"Safe/Dangerous threshold: 0.5\n")
+display(comparison_df)
+print("\n" + "=" * 80)
 
 # COMMAND ----------
 
@@ -112,9 +174,19 @@ print(f"{STREETS_TABLE} row count (unchanged): {row_count}")
 
 # COMMAND ----------
 
+print("=" * 80)
+print("STEP 2: ADD COMPANION FACT READING")
+print("=" * 80)
+print(f"\nTarget table: {ENVIRONMENT_TABLE}")
+print(f"Purpose: Create fact data dated after the SCD2 change")
+print(f"Reason: AUTO CDC FROM SNAPSHOT stamps new versions with wall-clock time")
+print("        (~2026-07-19), but all historical facts are 2023-2024\n")
+
+# Determine appropriate reading date
 gold_schema = STREETS_TABLE.rsplit(".", 2)[1]
 stg_table = f"{catalog}.{gold_schema}.stg_dim_street_scd2"
 
+print(f"Checking SCD2 staging table: {stg_table}")
 new_version_start_at = None
 try:
     rows = spark.sql(
@@ -129,13 +201,17 @@ except Exception:  # noqa: BLE001 -- stg table may not exist yet if Gold hasn't 
 
 if new_version_start_at is not None:
     reading_date = new_version_start_at + timedelta(hours=1)
-    print(f"Using stg_dim_street_scd2's latest __START_AT + 1h: {reading_date}")
+    print(f"Found latest __START_AT: {new_version_start_at}")
+    print(f"Setting reading date to: {reading_date} (1 hour after)\n")
 else:
     reading_date = datetime.now(timezone.utc) + timedelta(hours=1)
-    print(f"stg_dim_street_scd2 not available yet -- using now + 1h instead: {reading_date}")
+    print("SCD2 staging table not available yet")
+    print(f"Setting reading date to: {reading_date} (now + 1 hour)\n")
 
 reading_date_str = reading_date.strftime("%Y-%m-%d %H:%M:%S.%f")
 
+# Check if reading already exists
+print("Checking for existing post-SCD2 readings...")
 existing_new_reading = spark.sql(
     f"""
     SELECT COUNT(*) AS c FROM {ENVIRONMENT_TABLE}
@@ -144,8 +220,13 @@ existing_new_reading = spark.sql(
 ).collect()[0]["c"]
 
 if existing_new_reading > 0:
-    print(f"A reading after the SCD2 change already exists for street_id={STREET_ID} -- no insert needed.")
+    print(f"Status: Reading already exists (from earlier run)")
+    print(f"Found {existing_new_reading} reading(s) after SCD2 change")
+    print("No insert needed\n")
 else:
+    print("Status: No post-SCD2 reading found")
+    print("Inserting new reading...\n")
+    
     demo_run_id = str(uuid.uuid4())
     spark.sql(
         f"""
@@ -157,11 +238,29 @@ else:
         )
         """
     )
-    print(f"Inserted 1 new silver_environment reading: street_id={STREET_ID}, date={reading_date_str}")
+    
+    # Display inserted reading details
+    inserted_reading = spark.sql(
+        f"""
+        SELECT street_id, date, noise, pollution, light, raining, source_file, run_id
+        FROM {ENVIRONMENT_TABLE}
+        WHERE street_id = {STREET_ID} AND run_id = '{demo_run_id}'
+        """
+    )
+    
+    print("Inserted reading details:")
+    print("-" * 80)
+    display(inserted_reading)
+    print(f"\nInsert completed: 1 new reading for street_id={STREET_ID}")
 
-print(
-    "\nStep 1+2 complete. Next: (re-)refresh the Gold pipeline (a normal run is sufficient -- see "
-    "docs/day7_incremental_load_evidence.md), then verify stg_dim_street_scd2 (37 rows), Dim_Street "
-    "(street_key 1-37 contiguous), and gold_street_risk_summary (risk_changed_flag=true for street_id=7 "
-    "in the month this new reading falls in)."
-)
+print("\n" + "=" * 80)
+print("DEMO SETUP COMPLETE")
+print("=" * 80)
+print("\nNext steps:")
+print("  1. Refresh the Gold pipeline (standard run)")
+print("  2. Verify stg_dim_street_scd2 has 37 rows")
+print("  3. Verify Dim_Street has street_key 1-37 (contiguous)")
+print(f"  4. Verify gold_street_risk_summary shows risk_changed_flag=true")
+print(f"     for street_id={STREET_ID} in the month of the new reading")
+print("\nRefer to: docs/day7_incremental_load_evidence.md")
+print("=" * 80)

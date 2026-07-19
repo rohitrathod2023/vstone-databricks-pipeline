@@ -63,10 +63,9 @@ CORRECTION_STREET_ID = 1
 CORRECTION_DATE = "2023-08-15 00:00:03.093"
 
 # A street_id+date combination confirmed NOT to exist yet -- a genuinely new
-# reading, one day past the last currently-observed date (2024-03-10) for
-# this street, not an arbitrary far-future placeholder.
+# reading, one day past the last currently-observed date for this street.
 NEW_STREET_ID = 1
-NEW_DATE = "2024-03-11 08:00:00.000"
+NEW_DATE = "2024-03-13 08:00:00.000"
 
 # COMMAND ----------
 
@@ -75,9 +74,15 @@ NEW_DATE = "2024-03-11 08:00:00.000"
 
 # COMMAND ----------
 
+# Capture initial table state
 before_count = spark.table(TABLE).count()
-print(f"Before row count: {before_count}")
 
+print("=" * 80)
+print("STEP 1: BEFORE STATE")
+print("=" * 80)
+print(f"\nCurrent table row count: {before_count:,}\n")
+
+# Validate the correction target exists
 before_row = (
     spark.table(TABLE)
     .filter(f"street_id = {CORRECTION_STREET_ID} AND date = '{CORRECTION_DATE}'")
@@ -89,8 +94,14 @@ if len(before_row) != 1:
         f"date={CORRECTION_DATE}, found {len(before_row)}. Not proceeding against an unexpected state."
     )
 before_row = before_row[0].asDict()
-print(f"Row to be corrected (before): {before_row}")
 
+# Display row to be corrected in table format
+print("Row to be corrected:")
+print("-" * 80)
+correction_df = spark.createDataFrame([before_row])
+display(correction_df)
+
+# Validate the new reading key doesn't exist yet
 new_combo_count = (
     spark.table(TABLE)
     .filter(f"street_id = {NEW_STREET_ID} AND date = '{NEW_DATE}'")
@@ -101,6 +112,9 @@ if new_combo_count != 0:
         f"STOP: expected street_id={NEW_STREET_ID}, date={NEW_DATE} to not exist yet, "
         f"found {new_combo_count} row(s). Pick a different simulated 'new reading' key."
     )
+
+print(f"\nValidation: street_id={NEW_STREET_ID}, date={NEW_DATE} confirmed as new (not in table)")
+print("=" * 80 + "\n")
 
 # COMMAND ----------
 
@@ -163,7 +177,19 @@ new_data_rows = [
 ]
 
 new_data_df = spark.createDataFrame(new_data_rows, new_data_schema)
+
+print("=" * 80)
+print("STEP 2: SIMULATED NEW DATA DROP")
+print("=" * 80)
+print(f"\nGenerated {len(new_data_rows)} rows for MERGE operation:")
+print("  - 1 correction (updates existing street_id + date)")
+print("  - 1 new reading (inserts new street_id + date)\n")
+print(f"Run ID: {demo_run_id}")
+print(f"Load timestamp: {demo_load_dt}\n")
+print("Data preview:")
+print("-" * 80)
 display(new_data_df)
+print("=" * 80 + "\n")
 
 # COMMAND ----------
 
@@ -182,9 +208,21 @@ display(new_data_df)
 
 # COMMAND ----------
 
+print("=" * 80)
+print("STEP 3: EXECUTING MERGE INTO")
+print("=" * 80)
+print(f"\nTarget table: {TABLE}")
+print("Merge key: street_id + date")
+print("Logic: ")
+print("  - WHEN MATCHED: Update measurement values (noise, pollution, light, raining)")
+print("  - WHEN NOT MATCHED: Insert new row\n")
+print("Executing...")
+
+# Create temporary view for merge source
 new_data_df.createOrReplaceTempView("_merge_demo_source")
 
-spark.sql(
+# Execute MERGE INTO operation
+merge_result = spark.sql(
     f"""
     MERGE INTO {TABLE} AS target
     USING _merge_demo_source AS source
@@ -201,7 +239,9 @@ spark.sql(
     WHEN NOT MATCHED THEN INSERT *
     """
 )
-print("MERGE INTO applied.")
+
+print("\nMERGE INTO operation completed successfully")
+print("=" * 80 + "\n")
 
 # COMMAND ----------
 
@@ -210,27 +250,45 @@ print("MERGE INTO applied.")
 
 # COMMAND ----------
 
+# Capture post-merge table state
 after_count = spark.table(TABLE).count()
-print(f"After row count: {after_count} (expected {before_count} + 1 = {before_count + 1})")
 
+print("=" * 80)
+print("STEP 4: AFTER STATE")
+print("=" * 80)
+print(f"\nRow count comparison:")
+print(f"  Before: {before_count:,}")
+print(f"  After:  {after_count:,}")
+print(f"  Delta:  +{after_count - before_count} (expected: +1)\n")
+
+# Verify corrected row
 after_row = (
     spark.table(TABLE)
     .filter(f"street_id = {CORRECTION_STREET_ID} AND date = '{CORRECTION_DATE}'")
     .collect()
 )
-print(f"Corrected row count for this key (expect exactly 1, no duplicate): {len(after_row)}")
+print(f"Corrected row validation: Found {len(after_row)} row(s) (expected: 1, no duplicates)")
 if after_row:
     after_row_dict = after_row[0].asDict()
-    print(f"Row after correction: {after_row_dict}")
+    print("\nCorrected row details:")
+    print("-" * 80)
+    corrected_df = spark.createDataFrame([after_row_dict])
+    display(corrected_df)
 
+# Verify new row
 new_row = (
     spark.table(TABLE)
     .filter(f"street_id = {NEW_STREET_ID} AND date = '{NEW_DATE}'")
     .collect()
 )
-print(f"New row count for this key (expect exactly 1): {len(new_row)}")
+print(f"\nNew row validation: Found {len(new_row)} row(s) (expected: 1)")
 if new_row:
-    print(f"New row: {new_row[0].asDict()}")
+    print("\nNew row details:")
+    print("-" * 80)
+    new_row_df = spark.createDataFrame([new_row[0].asDict()])
+    display(new_row_df)
+
+print("=" * 80 + "\n")
 
 # COMMAND ----------
 
@@ -239,6 +297,7 @@ if new_row:
 
 # COMMAND ----------
 
+# Perform validation checks
 row_count_ok = after_count == before_count + 1
 no_duplicate_ok = len(after_row) == 1
 values_corrected_ok = (
@@ -250,15 +309,62 @@ values_corrected_ok = (
 )
 new_row_ok = len(new_row) == 1
 
-print(f"{'PASS' if row_count_ok else 'FAIL'} -- row count is exactly before+1")
-print(f"{'PASS' if no_duplicate_ok else 'FAIL'} -- corrected key has no duplicate")
-print(f"{'PASS' if values_corrected_ok else 'FAIL'} -- corrected row shows the new values, not the old ones")
-print(f"{'PASS' if new_row_ok else 'FAIL'} -- new reading exists exactly once")
+print("=" * 80)
+print("STEP 5: VALIDATION RESULTS")
+print("=" * 80)
+print()
 
+# Create validation results table
+validation_results = [
+    ("Row count increment", "Exactly +1 new row", "PASS" if row_count_ok else "FAIL"),
+    ("No duplicates", "Corrected key has exactly 1 row", "PASS" if no_duplicate_ok else "FAIL"),
+    ("Values updated", "Corrected row reflects new measurements", "PASS" if values_corrected_ok else "FAIL"),
+    ("New row inserted", "New reading exists exactly once", "PASS" if new_row_ok else "FAIL"),
+]
+
+validation_df = spark.createDataFrame(validation_results, ["Check", "Expected", "Status"])
+display(validation_df)
+
+# Verify all checks passed
 if not (row_count_ok and no_duplicate_ok and values_corrected_ok and new_row_ok):
     raise RuntimeError(
         "STOP: one or more assertions failed after the MERGE. Do not treat this demo as complete -- "
         "investigate silver_environment's real state before proceeding."
     )
 
-print("\nMERGE INTO simulation complete: 1 row corrected in place, 1 new row inserted, no duplicates.")
+print("\n" + "=" * 80)
+print("MERGE INTO SIMULATION COMPLETE")
+print("=" * 80)
+print("\nSummary:")
+print("  - 1 row corrected in place (updated measurement values)")
+print("  - 1 new row inserted")
+print("  - No duplicates created")
+print("  - All validations passed")
+print("\n" + "=" * 80)
+
+# COMMAND ----------
+
+# DBTITLE 1,Before/After Comparison
+# Create side-by-side comparison of corrected row
+print("\n" + "=" * 80)
+print("BEFORE/AFTER COMPARISON: CORRECTED ROW")
+print("=" * 80)
+print()
+
+# Select key measurement columns for comparison
+comparison_data = [
+    ("noise", before_row["noise"], after_row_dict["noise"], after_row_dict["noise"] - before_row["noise"]),
+    ("pollution", before_row["pollution"], after_row_dict["pollution"], after_row_dict["pollution"] - before_row["pollution"]),
+    ("light", before_row["light"], after_row_dict["light"], after_row_dict["light"] - before_row["light"]),
+    ("raining", before_row["raining"], after_row_dict["raining"], after_row_dict["raining"] - before_row["raining"]),
+]
+
+comparison_df = spark.createDataFrame(
+    comparison_data,
+    ["Measurement", "Before Value", "After Value", "Change"]
+)
+
+print(f"Street ID: {CORRECTION_STREET_ID}")
+print(f"Date: {CORRECTION_DATE}\n")
+display(comparison_df)
+print("=" * 80)
