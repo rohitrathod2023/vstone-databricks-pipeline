@@ -124,6 +124,28 @@ GOLD_MONTHLY_TRAFFIC_SUMMARY_SCHEMA = """
 # design, so it isn't unique in Dim_Street and can't be a valid FK target
 # there. street_id/year/month are verified NOT NULL in real data (0 nulls
 # found live), safe to declare as the PK.
+
+FACT_DAILY_SUMMARY_SCHEMA = """
+    date_key                    INT         NOT NULL,
+    total_vehicles_entered      BIGINT      NOT NULL,
+    total_vehicles_exited       BIGINT      NOT NULL,
+    net_traffic_flow            BIGINT      NOT NULL,
+    avg_noise                   DOUBLE      NOT NULL,
+    avg_pollution               DOUBLE      NOT NULL,
+    avg_light                   DOUBLE      NOT NULL,
+    avg_raining                 DOUBLE      NOT NULL,
+    max_pollution               DOUBLE      NOT NULL,
+    dangerous_streets_count     INT         NOT NULL,
+    telegram_message_count      INT         NOT NULL,
+    load_dt                     TIMESTAMP   NOT NULL,
+    source_format               STRING,
+    source_file                 STRING,
+    run_id                      STRING,
+    CONSTRAINT fact_daily_summary_pk PRIMARY KEY (date_key),
+    CONSTRAINT fact_daily_summary_date_fk
+        FOREIGN KEY (date_key) REFERENCES dim_date(date_key)
+"""
+
 GOLD_STREET_RISK_SUMMARY_SCHEMA = """
     street_id                       INT     NOT NULL,
     year                            INT     NOT NULL,

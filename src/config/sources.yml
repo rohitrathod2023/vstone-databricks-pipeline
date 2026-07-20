@@ -213,6 +213,12 @@ fact_street_conditions:
   target_table: ${catalog}.${gold_schema}.fact_street_conditions
   description: silver_environment's accepted rows joined to Dim_Street (SCD2 range join) and Dim_Date.
 
+
+fact_daily_summary:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.fact_daily_summary
+  description: Daily aggregated summary across traffic, environment, telegram, and street safety. INNER JOIN on date ensures all measures have real data (NOT NULL constraints are honest). One row per date (283 rows).
+
 # ---------------------------------------------------------------------------
 # Gold Phase 6 — business aggregate tables
 # ---------------------------------------------------------------------------

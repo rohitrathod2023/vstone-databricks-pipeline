@@ -56,6 +56,7 @@ import dlt  # noqa: E402
 from pipelines.gold.dim_date import build_dim_date, compute_date_range  # noqa: E402
 from pipelines.gold.dim_location import build_dim_location  # noqa: E402
 from pipelines.gold.dim_street import TRACKED_COLUMNS, build_dim_street  # noqa: E402
+from pipelines.gold.fact_daily_summary import build_fact_daily_summary  # noqa: E402
 from pipelines.gold.fact_street_conditions import build_fact_street_conditions  # noqa: E402
 from pipelines.gold.fact_traffic_counts import build_fact_traffic_counts  # noqa: E402
 from pipelines.gold.gold_monthly_traffic_summary import build_gold_monthly_traffic_summary  # noqa: E402
@@ -64,6 +65,7 @@ from pipelines.gold.table_schemas import (  # noqa: E402
     DIM_DATE_SCHEMA,
     DIM_LOCATION_SCHEMA,
     DIM_STREET_SCHEMA,
+    FACT_DAILY_SUMMARY_SCHEMA,
     FACT_STREET_CONDITIONS_SCHEMA,
     FACT_TRAFFIC_COUNTS_SCHEMA,
     GOLD_MONTHLY_TRAFFIC_SUMMARY_SCHEMA,
@@ -78,6 +80,7 @@ _DIM_LOCATION_CFG = get_source_config("dim_location", env=_ENV)
 _STG_DIM_STREET_SCD2_CFG = get_source_config("stg_dim_street_scd2", env=_ENV)
 _DIM_STREET_CFG = get_source_config("dim_street", env=_ENV)
 _FACT_TRAFFIC_COUNTS_CFG = get_source_config("fact_traffic_counts", env=_ENV)
+_FACT_DAILY_SUMMARY_CFG = get_source_config("fact_daily_summary", env=_ENV)
 _FACT_STREET_CONDITIONS_CFG = get_source_config("fact_street_conditions", env=_ENV)
 _GOLD_MONTHLY_TRAFFIC_SUMMARY_CFG = get_source_config("gold_monthly_traffic_summary", env=_ENV)
 _GOLD_STREET_RISK_SUMMARY_CFG = get_source_config("gold_street_risk_summary", env=_ENV)
@@ -221,6 +224,34 @@ def fact_street_conditions():
 
 # COMMAND ----------
 
+
+# COMMAND ----------
+
+# DBTITLE 1,Fact_Daily_Summary
+
+
+@dlt.table(
+    name="fact_daily_summary",
+    comment=_FACT_DAILY_SUMMARY_CFG["description"],
+    schema=FACT_DAILY_SUMMARY_SCHEMA,
+)
+def fact_daily_summary():
+    """Daily aggregated summary across traffic, environment, telegram, and
+    street safety. INNER JOIN on dates ensures all measures have real data.
+    """
+    traffic_df = spark.table(_TRAFFIC_TABLE)
+    environment_df = spark.table(_ENVIRONMENT_TABLE)
+    telegram_df = spark.table(_TELEGRAM_TABLE)
+    dim_street_df = spark.table("dim_street")
+    
+    return build_fact_daily_summary(
+        spark,
+        traffic_df,
+        environment_df,
+        telegram_df,
+        dim_street_df,
+    )
+
 # DBTITLE 1,gold_monthly_traffic_summary
 
 
@@ -250,3 +281,4 @@ def gold_street_risk_summary():
     dim_street_df = spark.table("dim_street")
     dim_date_df = spark.table("dim_date")
     return build_gold_street_risk_summary(fact_street_conditions_df, dim_street_df, dim_date_df)
+
