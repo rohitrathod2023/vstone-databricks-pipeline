@@ -17,7 +17,9 @@
 # MAGIC combines traffic, environmental, and telegram observations via an
 # MAGIC `observation_type` discriminator, resolved against `dim_date`,
 # MAGIC `dim_location`, `dim_street`, `dim_technique`, and `dim_audit`.
-# MAGIC `gold_daily_summary` and `gold_location_summary` roll it up further.
+# MAGIC `agg_daily_street_conditions`, `agg_daily_location_traffic`,
+# MAGIC `agg_monthly_street_summary`, and `agg_hourly_telegram_activity` roll it
+# MAGIC up further, each at its own street/location/date/hour grain.
 # MAGIC
 # MAGIC Catalog/target schema are set at the pipeline level (see
 # MAGIC `resources/pipelines/gold_dlt_pipeline.yml`), not in this file -- same
@@ -70,8 +72,10 @@ from pipelines.gold.dim_time import build_dim_time  # noqa: E402
 from pipelines.gold.fact_city_observations import build_fact_city_observations  # noqa: E402
 
 # Aggregates, on top of the unified fact
-from pipelines.gold.gold_daily_summary import build_gold_daily_summary  # noqa: E402
-from pipelines.gold.gold_location_summary import build_gold_location_summary  # noqa: E402
+from pipelines.gold.agg_daily_street_conditions import build_agg_daily_street_conditions  # noqa: E402
+from pipelines.gold.agg_daily_location_traffic import build_agg_daily_location_traffic  # noqa: E402
+from pipelines.gold.agg_monthly_street_summary import build_agg_monthly_street_summary  # noqa: E402
+from pipelines.gold.agg_hourly_telegram_activity import build_agg_hourly_telegram_activity  # noqa: E402
 
 # Schemas
 from pipelines.gold.table_schemas import (  # noqa: E402
@@ -82,8 +86,10 @@ from pipelines.gold.table_schemas import (  # noqa: E402
     DIM_AUDIT_SCHEMA,
     DIM_TIME_SCHEMA,
     FACT_CITY_OBSERVATIONS_SCHEMA,
-    GOLD_DAILY_SUMMARY_SCHEMA,
-    GOLD_LOCATION_SUMMARY_SCHEMA,
+    AGG_DAILY_STREET_CONDITIONS_SCHEMA,
+    AGG_DAILY_LOCATION_TRAFFIC_SCHEMA,
+    AGG_MONTHLY_STREET_SUMMARY_SCHEMA,
+    AGG_HOURLY_TELEGRAM_ACTIVITY_SCHEMA,
 )
 from utils.config_loader import get_source_config  # noqa: E402
 
@@ -97,8 +103,10 @@ _DIM_TECHNIQUE_CFG = get_source_config("dim_technique", env=_ENV)
 _DIM_AUDIT_CFG = get_source_config("dim_audit", env=_ENV)
 _DIM_TIME_CFG = get_source_config("dim_time", env=_ENV)
 _FACT_CITY_OBSERVATIONS_CFG = get_source_config("fact_city_observations", env=_ENV)
-_GOLD_DAILY_SUMMARY_CFG = get_source_config("gold_daily_summary", env=_ENV)
-_GOLD_LOCATION_SUMMARY_CFG = get_source_config("gold_location_summary", env=_ENV)
+_AGG_DAILY_STREET_CONDITIONS_CFG = get_source_config("agg_daily_street_conditions", env=_ENV)
+_AGG_DAILY_LOCATION_TRAFFIC_CFG = get_source_config("agg_daily_location_traffic", env=_ENV)
+_AGG_MONTHLY_STREET_SUMMARY_CFG = get_source_config("agg_monthly_street_summary", env=_ENV)
+_AGG_HOURLY_TELEGRAM_ACTIVITY_CFG = get_source_config("agg_hourly_telegram_activity", env=_ENV)
 _TRAFFIC_TABLE = get_source_config("silver_traffic", env=_ENV)["target_table"]
 _ENVIRONMENT_TABLE = get_source_config("silver_environment", env=_ENV)["target_table"]
 _TELEGRAM_TABLE = get_source_config("silver_telegram", env=_ENV)["target_table"]
@@ -278,27 +286,71 @@ def fact_city_observations():
 
 # COMMAND ----------
 
-# DBTITLE 1,gold_daily_summary
+# DBTITLE 1,agg_daily_street_conditions
 
 
 @dlt.table(
-    name="gold_daily_summary",
-    comment=_GOLD_DAILY_SUMMARY_CFG["description"],
-    schema=GOLD_DAILY_SUMMARY_SCHEMA,
+    name="agg_daily_street_conditions",
+    comment=_AGG_DAILY_STREET_CONDITIONS_CFG["description"],
+    schema=AGG_DAILY_STREET_CONDITIONS_SCHEMA,
 )
-def gold_daily_summary():
-    return build_gold_daily_summary(spark.table("fact_city_observations"))
+def agg_daily_street_conditions():
+    return build_agg_daily_street_conditions(
+        spark.table("fact_city_observations"),
+        spark.table("dim_street"),
+        spark.table("dim_date"),
+    )
 
 
 # COMMAND ----------
 
-# DBTITLE 1,gold_location_summary
+# DBTITLE 1,agg_daily_location_traffic
 
 
 @dlt.table(
-    name="gold_location_summary",
-    comment=_GOLD_LOCATION_SUMMARY_CFG["description"],
-    schema=GOLD_LOCATION_SUMMARY_SCHEMA,
+    name="agg_daily_location_traffic",
+    comment=_AGG_DAILY_LOCATION_TRAFFIC_CFG["description"],
+    schema=AGG_DAILY_LOCATION_TRAFFIC_SCHEMA,
 )
-def gold_location_summary():
-    return build_gold_location_summary(spark.table("fact_city_observations"))
+def agg_daily_location_traffic():
+    return build_agg_daily_location_traffic(
+        spark.table("fact_city_observations"),
+        spark.table("dim_location"),
+        spark.table("dim_date"),
+    )
+
+
+# COMMAND ----------
+
+# DBTITLE 1,agg_monthly_street_summary
+
+
+@dlt.table(
+    name="agg_monthly_street_summary",
+    comment=_AGG_MONTHLY_STREET_SUMMARY_CFG["description"],
+    schema=AGG_MONTHLY_STREET_SUMMARY_SCHEMA,
+)
+def agg_monthly_street_summary():
+    return build_agg_monthly_street_summary(
+        spark.table("fact_city_observations"),
+        spark.table("dim_street"),
+        spark.table("dim_date"),
+    )
+
+
+# COMMAND ----------
+
+# DBTITLE 1,agg_hourly_telegram_activity
+
+
+@dlt.table(
+    name="agg_hourly_telegram_activity",
+    comment=_AGG_HOURLY_TELEGRAM_ACTIVITY_CFG["description"],
+    schema=AGG_HOURLY_TELEGRAM_ACTIVITY_SCHEMA,
+)
+def agg_hourly_telegram_activity():
+    return build_agg_hourly_telegram_activity(
+        spark.table("fact_city_observations"),
+        spark.table("dim_date"),
+        spark.table("dim_time"),
+    )

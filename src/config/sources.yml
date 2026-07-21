@@ -229,12 +229,22 @@ fact_city_observations:
 # ---------------------------------------------------------------------------
 # Gold Phase 7 — business aggregate tables
 # ---------------------------------------------------------------------------
-gold_daily_summary:
+agg_daily_street_conditions:
   technique: delta_live_tables
-  target_table: ${catalog}.${gold_schema}.gold_daily_summary
-  description: fact_city_observations rolled up to one row per date -- daily traffic flow, environment averages, and telegram report volume.
+  target_table: ${catalog}.${gold_schema}.agg_daily_street_conditions
+  description: fact_city_observations' environmental rows rolled up to one row per street per day -- noise/pollution/light trends and rain intensity per street.
 
-gold_location_summary:
+agg_daily_location_traffic:
   technique: delta_live_tables
-  target_table: ${catalog}.${gold_schema}.gold_location_summary
-  description: fact_city_observations' traffic rows rolled up to one row per location -- total entered/exited/volume, answers "busiest intersections."
+  target_table: ${catalog}.${gold_schema}.agg_daily_location_traffic
+  description: fact_city_observations' traffic rows rolled up to one row per location per day -- traffic volume trends per intersection over time.
+
+agg_monthly_street_summary:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.agg_monthly_street_summary
+  description: fact_city_observations' environmental rows rolled up to one row per street per month -- long-term/seasonal environmental trend view.
+
+agg_hourly_telegram_activity:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.agg_hourly_telegram_activity
+  description: fact_city_observations' telegram rows rolled up to one row per date per hour -- incident-report volume by time of day.

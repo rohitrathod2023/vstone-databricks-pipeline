@@ -167,6 +167,31 @@ def test_date_key_resolves_for_environmental_rows_with_a_non_midnight_timestamp(
     assert row["date_key"] == 20240102
 
 
+def test_time_key_extracts_hhmmss_for_traffic_rows_not_hardcoded_zero(spark):
+    """Regression test for the real bug: time_key was F.lit(0) for every
+    traffic row regardless of the timestamp. Must be HHMMSS (matching
+    dim_time.time_key's format), not seconds-since-midnight -- 10:15:42 ->
+    101542, not 36942."""
+    result = _build(
+        spark,
+        traffic_rows=[(100, 1, 5, 3, "2024-01-02T10:15:42", "copyinto") + _TRAFFIC_AUDIT],
+    )
+    row = result.filter(result.observation_type == "traffic").collect()[0]
+
+    assert row["time_key"] == 101542
+
+
+def test_time_key_extracts_hhmmss_for_environmental_rows_not_hardcoded_zero(spark):
+    """Same regression as above, for the environmental branch."""
+    result = _build(
+        spark,
+        environment_rows=[(1, "2024-01-02T15:30:07", 10.0, 5.0, 20.0, 0.3) + _ENV_AUDIT],
+    )
+    row = result.filter(result.observation_type == "environmental").collect()[0]
+
+    assert row["time_key"] == 153007
+
+
 def test_traffic_technique_key_resolves_per_row_from_source_technique(spark):
     """Regression test for the real bug: technique_key was hardcoded to a
     constant (3, "dlt") for every traffic row, discarding source_technique's
@@ -217,7 +242,7 @@ def test_schema_matches_expected_shape(spark):
 
     expected_columns = {
         "observation_type", "street_key", "location_key", "date_key", "time_key", "technique_key", "audit_key",
-        "noise", "pollution", "light", "raining", "enter", "exit", "message_count", "message_length",
+        "noise", "pollution", "light", "raining", "enter", "exit", "vehicle_plate_id", "message_count",
         "observation_id",
     }
     assert set(result.columns) == expected_columns
@@ -229,10 +254,26 @@ def test_traffic_row_has_null_environmental_and_telegram_measures(spark):
 
     assert row["enter"] == 5
     assert row["exit"] == 3
+    assert row["vehicle_plate_id"] == 100
     assert row["noise"] is None
     assert row["pollution"] is None
     assert row["message_count"] is None
-    assert row["message_length"] is None
+
+
+def test_vehicle_plate_id_is_null_for_environmental_and_telegram_rows(spark):
+    """vehicle_plate_id is a degenerate dimension carried from silver_traffic's
+    "id" column (Kaggle: car plate, 0-998) -- only traffic rows have a
+    vehicle at all, so the other two branches must leave it NULL."""
+    result = _build(
+        spark,
+        environment_rows=[(1, "2024-01-01T15:30:00", 10.0, 5.0, 20.0, 0.3) + _ENV_AUDIT],
+        telegram_rows=[("a report", datetime(2024, 1, 1, 9, 0, 0)) + _TELEGRAM_AUDIT],
+    )
+    env_row = result.filter(result.observation_type == "environmental").collect()[0]
+    telegram_row = result.filter(result.observation_type == "telegram").collect()[0]
+
+    assert env_row["vehicle_plate_id"] is None
+    assert telegram_row["vehicle_plate_id"] is None
 
 
 def test_audit_key_resolves_from_the_fact_sides_own_audit_columns(spark):
