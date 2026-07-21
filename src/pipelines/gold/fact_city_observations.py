@@ -19,6 +19,16 @@ from pyspark.sql import functions as F
 _SINGLE_SOURCE_TECHNIQUE_NAME = "copyinto"
 
 
+def _time_key_expr(timestamp_col: str):
+    """HHMMSS integer expression matching dim_time.time_key's format
+    (hour*10000 + minute*100 + second, e.g. 12:36:03 -> 123603) -- NOT
+    seconds-since-midnight, which would never match dim_time and silently
+    orphan the FK. Shared by all three branches so the format can't drift.
+    """
+    col = F.col(timestamp_col)
+    return (F.hour(col) * 10000 + F.minute(col) * 100 + F.second(col)).cast("int")
+
+
 def _single_technique_lookup(dim_technique_df: DataFrame, technique_name: str) -> DataFrame:
     """A lazy, one-row DataFrame to crossJoin technique_key onto every
     environmental/telegram row -- NOT a collected scalar.
@@ -159,7 +169,7 @@ def _build_environmental_observations(
         F.col("street.street_key"),
         F.lit(None).cast("int").alias("location_key"),
         F.col("date.date_key"),
-        F.lit(0).cast("int").alias("time_key"),  # TODO: extract from timestamp when available
+        _time_key_expr("env.date").alias("time_key"),
         F.col("_single_technique_key").cast("int").alias("technique_key"),
         F.col("audit.audit_key"),
         # Environmental measures
@@ -170,9 +180,9 @@ def _build_environmental_observations(
         # Traffic measures (NULL)
         F.lit(None).cast("int").alias("enter"),
         F.lit(None).cast("int").alias("exit"),
+        F.lit(None).cast("int").alias("vehicle_plate_id"),
         # Telegram measures (NULL)
         F.lit(None).cast("int").alias("message_count"),
-        F.lit(None).cast("int").alias("message_length"),
         # Degenerate dimension
         F.concat(F.lit("env_"), F.col("env.street_id"), F.lit("_"), F.col("date.date_key")).alias("observation_id"),
     )
@@ -191,6 +201,7 @@ def _build_traffic_observations(
     observation_type = 'traffic'
     FK: street_key (NULL), location_key (yes), date_key, time_key, technique_key, audit_key
     Measures: enter, exit
+    Degenerate dimension: vehicle_plate_id (Kaggle "id", 0-998)
 
     technique_key resolves per row from traffic.source_technique -- unlike
     environmental/telegram, silver_traffic genuinely varies across all 4
@@ -240,7 +251,7 @@ def _build_traffic_observations(
         F.lit(None).cast("int").alias("street_key"),
         F.col("location.location_key"),
         F.col("date.date_key"),
-        F.lit(0).cast("int").alias("time_key"),  # TODO: extract from timestamp when available
+        _time_key_expr("traffic.date").alias("time_key"),
         F.col("_technique_key").cast("int").alias("technique_key"),
         F.col("audit.audit_key"),
         # Environmental measures (NULL)
@@ -251,9 +262,15 @@ def _build_traffic_observations(
         # Traffic measures
         F.col("traffic.enter"),
         F.col("traffic.exit"),
+        # Degenerate dimension: car plate id (Kaggle "id", 0-998, "car plate
+        # without numbers") -- only traffic rows carry a vehicle at all, so
+        # this stays NULL on the environmental/telegram branches. Not a real
+        # dim_vehicle: the source has no other vehicle attributes to hang off
+        # it, just enough to support COUNT(DISTINCT vehicle_plate_id) style
+        # per-vehicle analysis.
+        F.col("traffic.id").alias("vehicle_plate_id"),
         # Telegram measures (NULL)
         F.lit(None).cast("int").alias("message_count"),
-        F.lit(None).cast("int").alias("message_length"),
         # Degenerate dimension
         F.concat(F.lit("traffic_"), F.col("traffic.location"), F.lit("_"), F.col("date.date_key")).alias(
             "observation_id"
@@ -272,7 +289,7 @@ def _build_telegram_observations(
 
     observation_type = 'telegram'
     FK: street_key (NULL), location_key (NULL), date_key, time_key, technique_key, audit_key
-    Measures: message_count, message_length
+    Measures: message_count
 
     SIMPLE integration - no text parsing, no NLP!
 
@@ -281,15 +298,7 @@ def _build_telegram_observations(
     # Extract date and time from event_timestamp
     telegram_with_keys = telegram_df.alias("telegram").withColumn(
         "parsed_date", F.to_date(F.col("event_timestamp"))
-    ).withColumn(
-        "time_key",
-        # Extract HHMMSS integer from timestamp
-        (
-            F.hour(F.col("event_timestamp")) * 10000
-            + F.minute(F.col("event_timestamp")) * 100
-            + F.second(F.col("event_timestamp"))
-        ).cast("int"),
-    )
+    ).withColumn("time_key", _time_key_expr("event_timestamp"))
 
     # Join to get date_key
     telegram_with_date = telegram_with_keys.join(
@@ -333,9 +342,9 @@ def _build_telegram_observations(
         # Traffic measures (NULL)
         F.lit(None).cast("int").alias("enter"),
         F.lit(None).cast("int").alias("exit"),
+        F.lit(None).cast("int").alias("vehicle_plate_id"),
         # Telegram measures (SIMPLE!)
         F.lit(1).alias("message_count"),
-        F.length(F.col("telegram.message")).alias("message_length"),
         # Degenerate dimension
         F.concat(F.lit("telegram_"), F.col("date.date_key"), F.lit("_"), F.col("time_key")).alias(
             "observation_id"

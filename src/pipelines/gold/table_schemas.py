@@ -121,8 +121,8 @@ FACT_CITY_OBSERVATIONS_SCHEMA = """
     raining             DOUBLE,
     enter               INT,
     exit                INT,
+    vehicle_plate_id    INT,
     message_count       INT,
-    message_length      INT,
     observation_id      STRING,
     CONSTRAINT fact_city_observations_street_fk
         FOREIGN KEY (street_key) REFERENCES dim_street(street_key),
@@ -139,53 +139,140 @@ FACT_CITY_OBSERVATIONS_SCHEMA = """
 """
 
 # ============================================================================
-# gold_daily_summary -- simple daily rollup of fact_city_observations
+# agg_daily_street_conditions -- daily environmental rollup per street
 # ============================================================================
 
-# No cluster_by/partition spec: at one row per date (~283 rows on the real
-# dataset), partitioning by date_key would create one tiny file per
-# partition with no pruning benefit -- same reasoning already applied
-# elsewhere in this project for small aggregate tables.
-GOLD_DAILY_SUMMARY_SCHEMA = """
+# Grain is the street_key/date_key pair itself (no surrogate key minted for
+# an aggregate table) -- composite PRIMARY KEY, same convention DLT accepts
+# for dimensions' single-column PKs. No street=NULL orphan case (unlike
+# location=7): every street_id has a dim_street row, so this PK can never be
+# NULL.
+AGG_DAILY_STREET_CONDITIONS_SCHEMA = """
+    street_key                  INT     NOT NULL,
+    street_id                   INT,
+    street                      STRING,
     date_key                    INT     NOT NULL,
-    total_vehicles_entered      BIGINT,
-    total_vehicles_exited       BIGINT,
-    net_traffic_flow            BIGINT,
+    full_date                   DATE,
+    year                        INT,
+    month                       INT,
+    day_name                    STRING,
+    is_weekend                  BOOLEAN,
     avg_noise                   DOUBLE,
-    avg_pollution               DOUBLE,
+    max_noise                   DOUBLE,
+    min_noise                   DOUBLE,
+    avg_pollution                DOUBLE,
+    max_pollution                DOUBLE,
+    min_pollution                DOUBLE,
     avg_light                   DOUBLE,
-    avg_raining                 DOUBLE,
-    telegram_message_count      BIGINT,
-    total_observations          BIGINT,
+    max_light                   DOUBLE,
+    min_light                   DOUBLE,
+    rain_intensity_sum          DOUBLE,
+    observation_count           BIGINT,
     load_dt                     TIMESTAMP,
-    source_format                STRING,
+    source_format               STRING,
     source_file                 STRING,
     run_id                      STRING,
-    CONSTRAINT gold_daily_summary_pk PRIMARY KEY (date_key),
-    CONSTRAINT gold_daily_summary_date_fk
+    CONSTRAINT agg_daily_street_conditions_pk PRIMARY KEY (street_key, date_key),
+    CONSTRAINT agg_daily_street_conditions_street_fk
+        FOREIGN KEY (street_key) REFERENCES dim_street(street_key),
+    CONSTRAINT agg_daily_street_conditions_date_fk
         FOREIGN KEY (date_key) REFERENCES dim_date(date_key)
 """
 
 # ============================================================================
-# gold_location_summary -- simple per-location traffic rollup, answers the
-# brief's "busiest intersections" question
+# agg_daily_location_traffic -- daily traffic rollup per location
 # ============================================================================
 
 # No PRIMARY KEY: location_key is legitimately NULL for one group (the
 # location=7 orphan -- traffic readings whose location was excluded from
 # Dim_Location at Silver for bad coordinates, see docs/gold_data_model.md).
-# A PRIMARY KEY member can't be NULL. The FOREIGN KEY below is unaffected --
-# FK columns are allowed to be NULL.
-GOLD_LOCATION_SUMMARY_SCHEMA = """
+# A PRIMARY KEY member can't be NULL, same reasoning the old
+# gold_location_summary applied. The FOREIGN KEY is unaffected -- FK columns
+# are allowed to be NULL.
+AGG_DAILY_LOCATION_TRAFFIC_SCHEMA = """
     location_key                INT,
-    total_vehicles_entered      BIGINT,
-    total_vehicles_exited       BIGINT,
-    total_traffic_volume        BIGINT,
-    total_traffic_readings      BIGINT,
+    location                    INT,
+    latitude                    DOUBLE,
+    longitude                   DOUBLE,
+    date_key                    INT     NOT NULL,
+    full_date                   DATE,
+    year                        INT,
+    month                       INT,
+    day_name                    STRING,
+    is_weekend                  BOOLEAN,
+    total_enter                 BIGINT,
+    total_exit                  BIGINT,
+    net_traffic                 BIGINT,
+    avg_enter                   DOUBLE,
+    avg_exit                    DOUBLE,
+    max_enter                   INT,
+    max_exit                    INT,
+    observation_count           BIGINT,
     load_dt                     TIMESTAMP,
     source_format               STRING,
     source_file                 STRING,
     run_id                      STRING,
-    CONSTRAINT gold_location_summary_location_fk
-        FOREIGN KEY (location_key) REFERENCES dim_location(location_key)
+    CONSTRAINT agg_daily_location_traffic_location_fk
+        FOREIGN KEY (location_key) REFERENCES dim_location(location_key),
+    CONSTRAINT agg_daily_location_traffic_date_fk
+        FOREIGN KEY (date_key) REFERENCES dim_date(date_key)
+"""
+
+# ============================================================================
+# agg_monthly_street_summary -- monthly environmental rollup per street
+# ============================================================================
+
+# No FK on (year, month): dim_date's grain is one row per day, so there's no
+# single dim_date row a (year, month) pair could reference -- same reasoning
+# as not inventing a fake relationship elsewhere in this model.
+AGG_MONTHLY_STREET_SUMMARY_SCHEMA = """
+    street_key                  INT     NOT NULL,
+    street_id                   INT,
+    street                      STRING,
+    dangerous                   DOUBLE,
+    year                        INT     NOT NULL,
+    month                       INT     NOT NULL,
+    avg_noise                   DOUBLE,
+    avg_pollution                DOUBLE,
+    avg_light                   DOUBLE,
+    max_noise                   DOUBLE,
+    max_pollution                DOUBLE,
+    max_light                   DOUBLE,
+    days_with_rain               BIGINT,
+    observation_count           BIGINT,
+    observation_days            BIGINT,
+    load_dt                     TIMESTAMP,
+    source_format               STRING,
+    source_file                 STRING,
+    run_id                      STRING,
+    CONSTRAINT agg_monthly_street_summary_pk PRIMARY KEY (street_key, year, month),
+    CONSTRAINT agg_monthly_street_summary_street_fk
+        FOREIGN KEY (street_key) REFERENCES dim_street(street_key)
+"""
+
+# ============================================================================
+# agg_hourly_telegram_activity -- hourly telegram message-volume rollup
+# ============================================================================
+
+# No FK to dim_time: this table's grain collapses time_key down to just
+# `hour` (0-23), which isn't dim_time's PRIMARY KEY (time_key, HHMMSS) --
+# declaring a FOREIGN KEY against a non-PK column isn't a real relationship,
+# so it's left undeclared rather than faked.
+AGG_HOURLY_TELEGRAM_ACTIVITY_SCHEMA = """
+    date_key                    INT     NOT NULL,
+    full_date                   DATE,
+    year                        INT,
+    month                       INT,
+    day_name                    STRING,
+    is_weekend                  BOOLEAN,
+    hour                        INT     NOT NULL,
+    total_messages               BIGINT,
+    observation_count           BIGINT,
+    load_dt                     TIMESTAMP,
+    source_format               STRING,
+    source_file                 STRING,
+    run_id                      STRING,
+    CONSTRAINT agg_hourly_telegram_activity_pk PRIMARY KEY (date_key, hour),
+    CONSTRAINT agg_hourly_telegram_activity_date_fk
+        FOREIGN KEY (date_key) REFERENCES dim_date(date_key)
 """
