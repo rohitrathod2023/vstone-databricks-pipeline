@@ -1,0 +1,19 @@
+# Resource Usage Analysis dashboard (Day 8-9) -- an AI/BI (Lakeview) dashboard
+# managed as a DAB resource, same deploy workflow as everything else:
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#
+# Real DBU consumption pulled from system.billing.usage (confirmed real and
+# populated on this Free Edition workspace -- see docs/resource_usage_dashboard.md
+# for the Step 0 investigation). Scoped to this project's bundle-deployed jobs
+# and DLT pipelines only, via a name-prefix join against system.lakeflow.jobs /
+# system.lakeflow.pipelines -- see the dashboard's own title widget for why a
+# naive job-name-only query would have silently missed Silver/Gold DLT compute.
+
+resources:
+  dashboards:
+    resource_usage_dashboard:
+      display_name: "Resource Usage Analysis (VStone Medallion Pipeline)"
+      file_path: ./resource_usage_dashboard.lvdash.json
+      warehouse_id: ${var.sql_warehouse_id}
