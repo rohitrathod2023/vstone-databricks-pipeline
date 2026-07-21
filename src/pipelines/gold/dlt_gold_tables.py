@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Gold DLT pipeline — dimensions and facts
+# MAGIC # Gold DLT pipeline — dimensions, unified fact, and aggregates
 # MAGIC Every `@dlt.table` function here is a thin wrapper -- real generation
 # MAGIC logic lives in plain, pytest-testable functions under
 # MAGIC `src/pipelines/gold/*.py` (dim_date.py, dim_location.py, ...), same
@@ -11,8 +11,13 @@
 # MAGIC DLT treat them as materialized views -- Databricks' own Lakeflow docs
 # MAGIC reserve streaming tables for row-level ingestion/transformation and
 # MAGIC materialized views for aggregation/dimension-style tables that can be
-# MAGIC fully recomputed each refresh. `Dim_Date` has no SCD2/CDC involvement,
-# MAGIC so a plain materialized view is the correct fit.
+# MAGIC fully recomputed each refresh.
+# MAGIC
+# MAGIC **Unified fact design:** one fact table, `fact_city_observations`,
+# MAGIC combines traffic, environmental, and telegram observations via an
+# MAGIC `observation_type` discriminator, resolved against `dim_date`,
+# MAGIC `dim_location`, `dim_street`, `dim_technique`, and `dim_audit`.
+# MAGIC `gold_daily_summary` and `gold_location_summary` roll it up further.
 # MAGIC
 # MAGIC Catalog/target schema are set at the pipeline level (see
 # MAGIC `resources/pipelines/gold_dlt_pipeline.yml`), not in this file -- same
@@ -53,23 +58,32 @@ if SRC_DIR not in sys.path:
 
 import dlt  # noqa: E402
 
+# Dimension builders
 from pipelines.gold.dim_date import build_dim_date, compute_date_range  # noqa: E402
 from pipelines.gold.dim_location import build_dim_location  # noqa: E402
 from pipelines.gold.dim_street import TRACKED_COLUMNS, build_dim_street  # noqa: E402
-from pipelines.gold.fact_daily_summary import build_fact_daily_summary  # noqa: E402
-from pipelines.gold.fact_street_conditions import build_fact_street_conditions  # noqa: E402
-from pipelines.gold.fact_traffic_counts import build_fact_traffic_counts  # noqa: E402
-from pipelines.gold.gold_monthly_traffic_summary import build_gold_monthly_traffic_summary  # noqa: E402
-from pipelines.gold.gold_street_risk_summary import build_gold_street_risk_summary  # noqa: E402
+from pipelines.gold.dim_technique import build_dim_technique  # noqa: E402
+from pipelines.gold.dim_audit import build_dim_audit  # noqa: E402
+from pipelines.gold.dim_time import build_dim_time  # noqa: E402
+
+# Unified fact builder
+from pipelines.gold.fact_city_observations import build_fact_city_observations  # noqa: E402
+
+# Aggregates, on top of the unified fact
+from pipelines.gold.gold_daily_summary import build_gold_daily_summary  # noqa: E402
+from pipelines.gold.gold_location_summary import build_gold_location_summary  # noqa: E402
+
+# Schemas
 from pipelines.gold.table_schemas import (  # noqa: E402
     DIM_DATE_SCHEMA,
     DIM_LOCATION_SCHEMA,
     DIM_STREET_SCHEMA,
-    FACT_DAILY_SUMMARY_SCHEMA,
-    FACT_STREET_CONDITIONS_SCHEMA,
-    FACT_TRAFFIC_COUNTS_SCHEMA,
-    GOLD_MONTHLY_TRAFFIC_SUMMARY_SCHEMA,
-    GOLD_STREET_RISK_SUMMARY_SCHEMA,
+    DIM_TECHNIQUE_SCHEMA,
+    DIM_AUDIT_SCHEMA,
+    DIM_TIME_SCHEMA,
+    FACT_CITY_OBSERVATIONS_SCHEMA,
+    GOLD_DAILY_SUMMARY_SCHEMA,
+    GOLD_LOCATION_SUMMARY_SCHEMA,
 )
 from utils.config_loader import get_source_config  # noqa: E402
 
@@ -79,12 +93,12 @@ _DIM_DATE_CFG = get_source_config("dim_date", env=_ENV)
 _DIM_LOCATION_CFG = get_source_config("dim_location", env=_ENV)
 _STG_DIM_STREET_SCD2_CFG = get_source_config("stg_dim_street_scd2", env=_ENV)
 _DIM_STREET_CFG = get_source_config("dim_street", env=_ENV)
-_FACT_TRAFFIC_COUNTS_CFG = get_source_config("fact_traffic_counts", env=_ENV)
-_FACT_DAILY_SUMMARY_CFG = get_source_config("fact_daily_summary", env=_ENV)
-_FACT_STREET_CONDITIONS_CFG = get_source_config("fact_street_conditions", env=_ENV)
-_GOLD_MONTHLY_TRAFFIC_SUMMARY_CFG = get_source_config("gold_monthly_traffic_summary", env=_ENV)
-_GOLD_STREET_RISK_SUMMARY_CFG = get_source_config("gold_street_risk_summary", env=_ENV)
-
+_DIM_TECHNIQUE_CFG = get_source_config("dim_technique", env=_ENV)
+_DIM_AUDIT_CFG = get_source_config("dim_audit", env=_ENV)
+_DIM_TIME_CFG = get_source_config("dim_time", env=_ENV)
+_FACT_CITY_OBSERVATIONS_CFG = get_source_config("fact_city_observations", env=_ENV)
+_GOLD_DAILY_SUMMARY_CFG = get_source_config("gold_daily_summary", env=_ENV)
+_GOLD_LOCATION_SUMMARY_CFG = get_source_config("gold_location_summary", env=_ENV)
 _TRAFFIC_TABLE = get_source_config("silver_traffic", env=_ENV)["target_table"]
 _ENVIRONMENT_TABLE = get_source_config("silver_environment", env=_ENV)["target_table"]
 _TELEGRAM_TABLE = get_source_config("silver_telegram", env=_ENV)["target_table"]
@@ -176,109 +190,115 @@ def dim_street():
     # build_dim_street(): the streaming restriction applies to
     # spark.readStream queries specifically, not a batch read of a
     # streaming table's stored data. Reads the FULL history (every SCD2
-    # version), not just current -- Fact_Street_Conditions needs that to
-    # resolve the correct version per fact date.
+    # version), not just current -- fact_city_observations' environmental
+    # branch needs that to resolve the correct version per observation date.
     return build_dim_street(spark.table("stg_dim_street_scd2"))
 
 
 # COMMAND ----------
 
-# DBTITLE 1,Fact_Traffic_Counts
+# DBTITLE 1,Dim_Technique
 
 
 @dlt.table(
-    name="fact_traffic_counts",
-    comment=_FACT_TRAFFIC_COUNTS_CFG["description"],
-    schema=FACT_TRAFFIC_COUNTS_SCHEMA,
+    name="dim_technique",
+    comment=_DIM_TECHNIQUE_CFG["description"],
+    schema=DIM_TECHNIQUE_SCHEMA,
 )
-def fact_traffic_counts():
-    traffic_df = spark.table(_TRAFFIC_TABLE)
-    dim_location_df = spark.table("dim_location")
-    dim_date_df = spark.table("dim_date")
-    return build_fact_traffic_counts(traffic_df, dim_location_df, dim_date_df)
+def dim_technique():
+    return build_dim_technique(spark)
 
 
 # COMMAND ----------
 
-# DBTITLE 1,Fact_Street_Conditions
+# DBTITLE 1,Dim_Audit
 
 
 @dlt.table(
-    name="fact_street_conditions",
-    comment=_FACT_STREET_CONDITIONS_CFG["description"],
-    schema=FACT_STREET_CONDITIONS_SCHEMA,
-    # Liquid Clustering on the two columns most likely to be filtered/joined
-    # on (see docs/liquid_clustering_benchmark.md) -- ALTER TABLE ... CLUSTER
-    # BY cannot be applied post-hoc to this table (same
-    # EXPECT_TABLE_NOT_VIEW.NO_ALTERNATIVE limitation as PK/FK constraints,
-    # confirmed live), so cluster_by is declared here instead, at
-    # table-creation time, same pattern as schema=.
-    cluster_by=["street_key", "date_key"],
+    name="dim_audit",
+    comment=_DIM_AUDIT_CFG["description"],
+    schema=DIM_AUDIT_SCHEMA,
 )
-def fact_street_conditions():
-    environment_df = spark.table(_ENVIRONMENT_TABLE)
-    dim_street_df = spark.table("dim_street")
-    dim_date_df = spark.table("dim_date")
-    return build_fact_street_conditions(environment_df, dim_street_df, dim_date_df)
-
-
-# COMMAND ----------
-
-
-# COMMAND ----------
-
-# DBTITLE 1,Fact_Daily_Summary
-
-
-@dlt.table(
-    name="fact_daily_summary",
-    comment=_FACT_DAILY_SUMMARY_CFG["description"],
-    schema=FACT_DAILY_SUMMARY_SCHEMA,
-)
-def fact_daily_summary():
-    """Daily aggregated summary across traffic, environment, telegram, and
-    street safety. INNER JOIN on dates ensures all measures have real data.
-    """
+def dim_audit():
     traffic_df = spark.table(_TRAFFIC_TABLE)
     environment_df = spark.table(_ENVIRONMENT_TABLE)
     telegram_df = spark.table(_TELEGRAM_TABLE)
+    return build_dim_audit(traffic_df, environment_df, telegram_df)
+
+
+# COMMAND ----------
+
+# DBTITLE 1,Dim_Time
+
+
+@dlt.table(
+    name="dim_time",
+    comment=_DIM_TIME_CFG["description"],
+    schema=DIM_TIME_SCHEMA,
+)
+def dim_time():
+    return build_dim_time(spark)
+
+
+# COMMAND ----------
+
+# DBTITLE 1,Fact_City_Observations
+
+
+@dlt.table(
+    name="fact_city_observations",
+    comment=_FACT_CITY_OBSERVATIONS_CFG["description"],
+    schema=FACT_CITY_OBSERVATIONS_SCHEMA,
+    cluster_by=["observation_type", "date_key"],
+)
+def fact_city_observations():
+    # Source data
+    traffic_df = spark.table(_TRAFFIC_TABLE)
+    environment_df = spark.table(_ENVIRONMENT_TABLE)
+    telegram_df = spark.table(_TELEGRAM_TABLE)
+
+    # Dimensions for FK lookups
     dim_street_df = spark.table("dim_street")
-    
-    return build_fact_daily_summary(
-        spark,
+    dim_location_df = spark.table("dim_location")
+    dim_date_df = spark.table("dim_date")
+    dim_audit_df = spark.table("dim_audit")
+    dim_technique_df = spark.table("dim_technique")
+
+    return build_fact_city_observations(
         traffic_df,
         environment_df,
         telegram_df,
         dim_street_df,
+        dim_location_df,
+        dim_date_df,
+        dim_audit_df,
+        dim_technique_df,
     )
-
-# DBTITLE 1,gold_monthly_traffic_summary
-
-
-@dlt.table(
-    name="gold_monthly_traffic_summary",
-    comment=_GOLD_MONTHLY_TRAFFIC_SUMMARY_CFG["description"],
-    schema=GOLD_MONTHLY_TRAFFIC_SUMMARY_SCHEMA,
-)
-def gold_monthly_traffic_summary():
-    fact_traffic_counts_df = spark.table("fact_traffic_counts")
-    dim_date_df = spark.table("dim_date")
-    return build_gold_monthly_traffic_summary(fact_traffic_counts_df, dim_date_df)
 
 
 # COMMAND ----------
 
-# DBTITLE 1,gold_street_risk_summary
+# DBTITLE 1,gold_daily_summary
 
 
 @dlt.table(
-    name="gold_street_risk_summary",
-    comment=_GOLD_STREET_RISK_SUMMARY_CFG["description"],
-    schema=GOLD_STREET_RISK_SUMMARY_SCHEMA,
+    name="gold_daily_summary",
+    comment=_GOLD_DAILY_SUMMARY_CFG["description"],
+    schema=GOLD_DAILY_SUMMARY_SCHEMA,
 )
-def gold_street_risk_summary():
-    fact_street_conditions_df = spark.table("fact_street_conditions")
-    dim_street_df = spark.table("dim_street")
-    dim_date_df = spark.table("dim_date")
-    return build_gold_street_risk_summary(fact_street_conditions_df, dim_street_df, dim_date_df)
+def gold_daily_summary():
+    return build_gold_daily_summary(spark.table("fact_city_observations"))
 
+
+# COMMAND ----------
+
+# DBTITLE 1,gold_location_summary
+
+
+@dlt.table(
+    name="gold_location_summary",
+    comment=_GOLD_LOCATION_SUMMARY_CFG["description"],
+    schema=GOLD_LOCATION_SUMMARY_SCHEMA,
+)
+def gold_location_summary():
+    return build_gold_location_summary(spark.table("fact_city_observations"))
