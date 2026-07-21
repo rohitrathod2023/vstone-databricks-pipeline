@@ -25,12 +25,17 @@ bundle:
 include:
   - resources/jobs/*.yml
   - resources/pipelines/*.yml
+  - resources/dashboards/*.yml
   - resources/*.yml
 
 variables:
   catalog:
     description: Unity Catalog catalog name for the active target
     default: vstone_traffic_dev
+  sql_warehouse_id:
+    description: SQL warehouse ID used to run the Resource Usage Analysis dashboard
+      (Free Edition only has one warehouse, "Serverless Starter Warehouse")
+    default: 9d5d38fd07db42f7
   notification_email:
     description: Email for job failure notifications
     default: rohitrathodcomp@gmail.com

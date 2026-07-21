@@ -1,0 +1,580 @@
+{
+  "datasets": [
+    {
+      "name": "ds_grand_total",
+      "displayName": "Grand total DBU (project scope)",
+      "queryLines": [
+        "WITH project_jobs AS (\n",
+        "  SELECT DISTINCT job_id\n",
+        "  FROM system.lakeflow.jobs\n",
+        "  WHERE name LIKE '[%] %'\n",
+        "),\n",
+        "project_pipelines AS (\n",
+        "  SELECT DISTINCT pipeline_id, name AS pipeline_name\n",
+        "  FROM system.lakeflow.pipelines\n",
+        "  WHERE name LIKE '[%] %'\n",
+        "),\n",
+        "job_usage AS (\n",
+        "  SELECT\n",
+        "    COALESCE(u.usage_metadata.job_name, 'Unnamed job run') AS component,\n",
+        "    u.usage_date,\n",
+        "    u.sku_name,\n",
+        "    u.usage_quantity\n",
+        "  FROM system.billing.usage u\n",
+        "  JOIN project_jobs pj ON u.usage_metadata.job_id = pj.job_id\n",
+        "),\n",
+        "pipeline_usage AS (\n",
+        "  SELECT\n",
+        "    pp.pipeline_name AS component,\n",
+        "    u.usage_date,\n",
+        "    u.sku_name,\n",
+        "    u.usage_quantity\n",
+        "  FROM system.billing.usage u\n",
+        "  JOIN project_pipelines pp ON u.usage_metadata.dlt_pipeline_id = pp.pipeline_id\n",
+        "),\n",
+        "combined AS (\n",
+        "  SELECT * FROM job_usage\n",
+        "  UNION ALL\n",
+        "  SELECT * FROM pipeline_usage\n",
+        "),\n",
+        "labeled AS (\n",
+        "  SELECT\n",
+        "    CASE\n",
+        "      WHEN component LIKE '%Data Chunking%' THEN 'Chunking'\n",
+        "      WHEN component LIKE '%COPY INTO%' OR component LIKE '%Bronze DLT%' OR component LIKE '%Bronze Auto Loader%' THEN 'Bronze'\n",
+        "      WHEN component LIKE '%Silver%' THEN 'Silver'\n",
+        "      WHEN component LIKE '%Gold%' THEN 'Gold'\n",
+        "      WHEN component LIKE '%Medallion Pipeline%' THEN 'Orchestration'\n",
+        "      ELSE 'Other'\n",
+        "    END AS layer,\n",
+        "    component,\n",
+        "    usage_date,\n",
+        "    sku_name,\n",
+        "    usage_quantity\n",
+        "  FROM combined\n",
+        ")\n",
+        "SELECT SUM(usage_quantity) AS total_dbu FROM labeled"
+      ]
+    },
+    {
+      "name": "ds_usage_by_layer",
+      "displayName": "Usage by layer",
+      "queryLines": [
+        "WITH project_jobs AS (\n",
+        "  SELECT DISTINCT job_id\n",
+        "  FROM system.lakeflow.jobs\n",
+        "  WHERE name LIKE '[%] %'\n",
+        "),\n",
+        "project_pipelines AS (\n",
+        "  SELECT DISTINCT pipeline_id, name AS pipeline_name\n",
+        "  FROM system.lakeflow.pipelines\n",
+        "  WHERE name LIKE '[%] %'\n",
+        "),\n",
+        "job_usage AS (\n",
+        "  SELECT\n",
+        "    COALESCE(u.usage_metadata.job_name, 'Unnamed job run') AS component,\n",
+        "    u.usage_date,\n",
+        "    u.sku_name,\n",
+        "    u.usage_quantity\n",
+        "  FROM system.billing.usage u\n",
+        "  JOIN project_jobs pj ON u.usage_metadata.job_id = pj.job_id\n",
+        "),\n",
+        "pipeline_usage AS (\n",
+        "  SELECT\n",
+        "    pp.pipeline_name AS component,\n",
+        "    u.usage_date,\n",
+        "    u.sku_name,\n",
+        "    u.usage_quantity\n",
+        "  FROM system.billing.usage u\n",
+        "  JOIN project_pipelines pp ON u.usage_metadata.dlt_pipeline_id = pp.pipeline_id\n",
+        "),\n",
+        "combined AS (\n",
+        "  SELECT * FROM job_usage\n",
+        "  UNION ALL\n",
+        "  SELECT * FROM pipeline_usage\n",
+        "),\n",
+        "labeled AS (\n",
+        "  SELECT\n",
+        "    CASE\n",
+        "      WHEN component LIKE '%Data Chunking%' THEN 'Chunking'\n",
+        "      WHEN component LIKE '%COPY INTO%' OR component LIKE '%Bronze DLT%' OR component LIKE '%Bronze Auto Loader%' THEN 'Bronze'\n",
+        "      WHEN component LIKE '%Silver%' THEN 'Silver'\n",
+        "      WHEN component LIKE '%Gold%' THEN 'Gold'\n",
+        "      WHEN component LIKE '%Medallion Pipeline%' THEN 'Orchestration'\n",
+        "      ELSE 'Other'\n",
+        "    END AS layer,\n",
+        "    component,\n",
+        "    usage_date,\n",
+        "    sku_name,\n",
+        "    usage_quantity\n",
+        "  FROM combined\n",
+        ")\n",
+        "SELECT layer, SUM(usage_quantity) AS total_dbu, COUNT(*) AS usage_records FROM labeled GROUP BY layer ORDER BY total_dbu DESC"
+      ]
+    },
+    {
+      "name": "ds_usage_by_component",
+      "displayName": "Usage by component (job / pipeline)",
+      "queryLines": [
+        "WITH project_jobs AS (\n",
+        "  SELECT DISTINCT job_id\n",
+        "  FROM system.lakeflow.jobs\n",
+        "  WHERE name LIKE '[%] %'\n",
+        "),\n",
+        "project_pipelines AS (\n",
+        "  SELECT DISTINCT pipeline_id, name AS pipeline_name\n",
+        "  FROM system.lakeflow.pipelines\n",
+        "  WHERE name LIKE '[%] %'\n",
+        "),\n",
+        "job_usage AS (\n",
+        "  SELECT\n",
+        "    COALESCE(u.usage_metadata.job_name, 'Unnamed job run') AS component,\n",
+        "    u.usage_date,\n",
+        "    u.sku_name,\n",
+        "    u.usage_quantity\n",
+        "  FROM system.billing.usage u\n",
+        "  JOIN project_jobs pj ON u.usage_metadata.job_id = pj.job_id\n",
+        "),\n",
+        "pipeline_usage AS (\n",
+        "  SELECT\n",
+        "    pp.pipeline_name AS component,\n",
+        "    u.usage_date,\n",
+        "    u.sku_name,\n",
+        "    u.usage_quantity\n",
+        "  FROM system.billing.usage u\n",
+        "  JOIN project_pipelines pp ON u.usage_metadata.dlt_pipeline_id = pp.pipeline_id\n",
+        "),\n",
+        "combined AS (\n",
+        "  SELECT * FROM job_usage\n",
+        "  UNION ALL\n",
+        "  SELECT * FROM pipeline_usage\n",
+        "),\n",
+        "labeled AS (\n",
+        "  SELECT\n",
+        "    CASE\n",
+        "      WHEN component LIKE '%Data Chunking%' THEN 'Chunking'\n",
+        "      WHEN component LIKE '%COPY INTO%' OR component LIKE '%Bronze DLT%' OR component LIKE '%Bronze Auto Loader%' THEN 'Bronze'\n",
+        "      WHEN component LIKE '%Silver%' THEN 'Silver'\n",
+        "      WHEN component LIKE '%Gold%' THEN 'Gold'\n",
+        "      WHEN component LIKE '%Medallion Pipeline%' THEN 'Orchestration'\n",
+        "      ELSE 'Other'\n",
+        "    END AS layer,\n",
+        "    component,\n",
+        "    usage_date,\n",
+        "    sku_name,\n",
+        "    usage_quantity\n",
+        "  FROM combined\n",
+        ")\n",
+        "SELECT layer, component, SUM(usage_quantity) AS total_dbu, COUNT(*) AS usage_records FROM labeled GROUP BY layer, component ORDER BY total_dbu DESC"
+      ]
+    },
+    {
+      "name": "ds_daily_trend",
+      "displayName": "Daily DBU trend by layer",
+      "queryLines": [
+        "WITH project_jobs AS (\n",
+        "  SELECT DISTINCT job_id\n",
+        "  FROM system.lakeflow.jobs\n",
+        "  WHERE name LIKE '[%] %'\n",
+        "),\n",
+        "project_pipelines AS (\n",
+        "  SELECT DISTINCT pipeline_id, name AS pipeline_name\n",
+        "  FROM system.lakeflow.pipelines\n",
+        "  WHERE name LIKE '[%] %'\n",
+        "),\n",
+        "job_usage AS (\n",
+        "  SELECT\n",
+        "    COALESCE(u.usage_metadata.job_name, 'Unnamed job run') AS component,\n",
+        "    u.usage_date,\n",
+        "    u.sku_name,\n",
+        "    u.usage_quantity\n",
+        "  FROM system.billing.usage u\n",
+        "  JOIN project_jobs pj ON u.usage_metadata.job_id = pj.job_id\n",
+        "),\n",
+        "pipeline_usage AS (\n",
+        "  SELECT\n",
+        "    pp.pipeline_name AS component,\n",
+        "    u.usage_date,\n",
+        "    u.sku_name,\n",
+        "    u.usage_quantity\n",
+        "  FROM system.billing.usage u\n",
+        "  JOIN project_pipelines pp ON u.usage_metadata.dlt_pipeline_id = pp.pipeline_id\n",
+        "),\n",
+        "combined AS (\n",
+        "  SELECT * FROM job_usage\n",
+        "  UNION ALL\n",
+        "  SELECT * FROM pipeline_usage\n",
+        "),\n",
+        "labeled AS (\n",
+        "  SELECT\n",
+        "    CASE\n",
+        "      WHEN component LIKE '%Data Chunking%' THEN 'Chunking'\n",
+        "      WHEN component LIKE '%COPY INTO%' OR component LIKE '%Bronze DLT%' OR component LIKE '%Bronze Auto Loader%' THEN 'Bronze'\n",
+        "      WHEN component LIKE '%Silver%' THEN 'Silver'\n",
+        "      WHEN component LIKE '%Gold%' THEN 'Gold'\n",
+        "      WHEN component LIKE '%Medallion Pipeline%' THEN 'Orchestration'\n",
+        "      ELSE 'Other'\n",
+        "    END AS layer,\n",
+        "    component,\n",
+        "    usage_date,\n",
+        "    sku_name,\n",
+        "    usage_quantity\n",
+        "  FROM combined\n",
+        ")\n",
+        "SELECT usage_date, layer, SUM(usage_quantity) AS total_dbu FROM labeled GROUP BY usage_date, layer ORDER BY usage_date"
+      ]
+    },
+    {
+      "name": "ds_by_sku",
+      "displayName": "Usage by SKU / compute type",
+      "queryLines": [
+        "WITH project_jobs AS (\n",
+        "  SELECT DISTINCT job_id\n",
+        "  FROM system.lakeflow.jobs\n",
+        "  WHERE name LIKE '[%] %'\n",
+        "),\n",
+        "project_pipelines AS (\n",
+        "  SELECT DISTINCT pipeline_id, name AS pipeline_name\n",
+        "  FROM system.lakeflow.pipelines\n",
+        "  WHERE name LIKE '[%] %'\n",
+        "),\n",
+        "job_usage AS (\n",
+        "  SELECT\n",
+        "    COALESCE(u.usage_metadata.job_name, 'Unnamed job run') AS component,\n",
+        "    u.usage_date,\n",
+        "    u.sku_name,\n",
+        "    u.usage_quantity\n",
+        "  FROM system.billing.usage u\n",
+        "  JOIN project_jobs pj ON u.usage_metadata.job_id = pj.job_id\n",
+        "),\n",
+        "pipeline_usage AS (\n",
+        "  SELECT\n",
+        "    pp.pipeline_name AS component,\n",
+        "    u.usage_date,\n",
+        "    u.sku_name,\n",
+        "    u.usage_quantity\n",
+        "  FROM system.billing.usage u\n",
+        "  JOIN project_pipelines pp ON u.usage_metadata.dlt_pipeline_id = pp.pipeline_id\n",
+        "),\n",
+        "combined AS (\n",
+        "  SELECT * FROM job_usage\n",
+        "  UNION ALL\n",
+        "  SELECT * FROM pipeline_usage\n",
+        "),\n",
+        "labeled AS (\n",
+        "  SELECT\n",
+        "    CASE\n",
+        "      WHEN component LIKE '%Data Chunking%' THEN 'Chunking'\n",
+        "      WHEN component LIKE '%COPY INTO%' OR component LIKE '%Bronze DLT%' OR component LIKE '%Bronze Auto Loader%' THEN 'Bronze'\n",
+        "      WHEN component LIKE '%Silver%' THEN 'Silver'\n",
+        "      WHEN component LIKE '%Gold%' THEN 'Gold'\n",
+        "      WHEN component LIKE '%Medallion Pipeline%' THEN 'Orchestration'\n",
+        "      ELSE 'Other'\n",
+        "    END AS layer,\n",
+        "    component,\n",
+        "    usage_date,\n",
+        "    sku_name,\n",
+        "    usage_quantity\n",
+        "  FROM combined\n",
+        ")\n",
+        "SELECT sku_name, SUM(usage_quantity) AS total_dbu, COUNT(*) AS usage_records FROM labeled GROUP BY sku_name ORDER BY total_dbu DESC"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "main",
+      "displayName": "Resource Usage",
+      "layout": [
+        {
+          "widget": {
+            "name": "widget_title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# VStone Medallion Pipeline \u00e2\u20ac\u201d Resource Usage\n",
+                "Real DBU consumption from `system.billing.usage`, joined against `system.lakeflow.jobs` / `system.lakeflow.pipelines` and scoped to this project's bundle-deployed resources only (name-prefix `[<target> <user>]`) \u00e2\u20ac\u201d ad-hoc scratch/verification job runs and unrelated workspace activity are excluded. Silver and Gold layer compute is billed under `dlt_pipeline_id`, not `job_id`, so both attribution paths are unioned below; a job-name-only view would have missed roughly two-thirds of real project DBU. All project usage on this Free Edition workspace currently falls under a single SKU (serverless jobs compute) \u00e2\u20ac\u201d there is no cluster/warehouse-type variety to break out further."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "widget_grand_total",
+            "queries": [
+              {
+                "name": "q_grand_total",
+                "query": {
+                  "datasetName": "ds_grand_total",
+                  "fields": [
+                    {
+                      "name": "total_dbu",
+                      "expression": "`total_dbu`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_dbu",
+                  "displayName": "Total DBU (project scope)"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 3,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "widget_by_layer",
+            "queries": [
+              {
+                "name": "q_by_layer",
+                "query": {
+                  "datasetName": "ds_usage_by_layer",
+                  "fields": [
+                    {
+                      "name": "layer",
+                      "expression": "`layer`"
+                    },
+                    {
+                      "name": "total_dbu",
+                      "expression": "`total_dbu`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "layer",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Layer"
+                },
+                "y": {
+                  "fieldName": "total_dbu",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total DBU"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 3,
+            "width": 9,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "widget_by_component",
+            "queries": [
+              {
+                "name": "q_by_component",
+                "query": {
+                  "datasetName": "ds_usage_by_component",
+                  "fields": [
+                    {
+                      "name": "layer",
+                      "expression": "`layer`"
+                    },
+                    {
+                      "name": "component",
+                      "expression": "`component`"
+                    },
+                    {
+                      "name": "total_dbu",
+                      "expression": "`total_dbu`"
+                    },
+                    {
+                      "name": "usage_records",
+                      "expression": "`usage_records`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "layer",
+                    "displayName": "Layer",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "component",
+                    "displayName": "Job / Pipeline",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "total_dbu",
+                    "displayName": "Total DBU",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "usage_records",
+                    "displayName": "Usage Records",
+                    "type": "integer"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "widget_daily_trend",
+            "queries": [
+              {
+                "name": "q_daily_trend",
+                "query": {
+                  "datasetName": "ds_daily_trend",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "layer",
+                      "expression": "`layer`"
+                    },
+                    {
+                      "name": "total_dbu",
+                      "expression": "`total_dbu`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "usage_date",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Date"
+                },
+                "y": {
+                  "fieldName": "total_dbu",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total DBU"
+                },
+                "color": {
+                  "fieldName": "layer",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Layer"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 7,
+            "width": 6,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "widget_by_sku",
+            "queries": [
+              {
+                "name": "q_by_sku",
+                "query": {
+                  "datasetName": "ds_by_sku",
+                  "fields": [
+                    {
+                      "name": "sku_name",
+                      "expression": "`sku_name`"
+                    },
+                    {
+                      "name": "total_dbu",
+                      "expression": "`total_dbu`"
+                    },
+                    {
+                      "name": "usage_records",
+                      "expression": "`usage_records`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "sku_name",
+                    "displayName": "SKU / Compute Type",
+                    "type": "string"
+                  },
+                  {
+                    "fieldName": "total_dbu",
+                    "displayName": "Total DBU",
+                    "type": "float"
+                  },
+                  {
+                    "fieldName": "usage_records",
+                    "displayName": "Usage Records",
+                    "type": "integer"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 4
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS"
+    }
+  ]
+}
