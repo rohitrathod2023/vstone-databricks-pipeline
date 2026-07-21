@@ -201,27 +201,40 @@ dim_street:
   description: SCD2 street dimension (36 streets) -- full version history, carries is_current for downstream joins.
 
 # ---------------------------------------------------------------------------
-# Gold Phase 5 — fact tables
+# Gold Phase 5 — supporting dimensions for fact_city_observations
 # ---------------------------------------------------------------------------
-fact_traffic_counts:
+dim_technique:
   technique: delta_live_tables
-  target_table: ${catalog}.${gold_schema}.fact_traffic_counts
-  description: silver_traffic joined to Dim_Location and Dim_Date -- one row per original silver_traffic row (24,681,794).
+  target_table: ${catalog}.${gold_schema}.dim_technique
+  description: Static ingestion-technique lookup (4 rows) -- autoloader/copyinto/dlt/pyspark.
 
-fact_street_conditions:
+dim_audit:
   technique: delta_live_tables
-  target_table: ${catalog}.${gold_schema}.fact_street_conditions
-  description: silver_environment's accepted rows joined to Dim_Street (SCD2 range join) and Dim_Date.
+  target_table: ${catalog}.${gold_schema}.dim_audit
+  description: Distinct (load_dt, source_format, source_file, run_id) combinations across silver_traffic/environment/telegram, as a lookup FK.
+
+dim_time:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.dim_time
+  description: Generated time-of-day dimension, one row per second (86,400 rows), for intraday analysis.
 
 # ---------------------------------------------------------------------------
-# Gold Phase 6 — business aggregate tables
+# Gold Phase 6 — fact_city_observations, the one Gold fact table
 # ---------------------------------------------------------------------------
-gold_monthly_traffic_summary:
+fact_city_observations:
   technique: delta_live_tables
-  target_table: ${catalog}.${gold_schema}.gold_monthly_traffic_summary
-  description: Fact_Traffic_Counts rolled up to location x month, with busiest_rank_in_month for trivial top-10 filtering.
+  target_table: ${catalog}.${gold_schema}.fact_city_observations
+  description: Unified fact table (observation_type discriminator) combining silver_traffic/environment/telegram into one row-per-observation grain.
 
-gold_street_risk_summary:
+# ---------------------------------------------------------------------------
+# Gold Phase 7 — business aggregate tables
+# ---------------------------------------------------------------------------
+gold_daily_summary:
   technique: delta_live_tables
-  target_table: ${catalog}.${gold_schema}.gold_street_risk_summary
-  description: Fact_Street_Conditions rolled up to street x month, joined to Dim_Street's SCD2 history for month-over-month risk-class change tracking.
+  target_table: ${catalog}.${gold_schema}.gold_daily_summary
+  description: fact_city_observations rolled up to one row per date -- daily traffic flow, environment averages, and telegram report volume.
+
+gold_location_summary:
+  technique: delta_live_tables
+  target_table: ${catalog}.${gold_schema}.gold_location_summary
+  description: fact_city_observations' traffic rows rolled up to one row per location -- total entered/exited/volume, answers "busiest intersections."

@@ -1,220 +1,175 @@
-# Gold data model — dimensions, facts, and PK/FK relationships
+# Gold data model — dimensions, one unified fact, and PK/FK relationships
 
 ## Star schema overview
 
 ```
 Dim_Date ──────────┐
-                    ├──< Fact_Traffic_Counts
-Dim_Location ───────┘
-
-Dim_Date ──────────┐
-                    ├──< Fact_Street_Conditions
-Dim_Street ─────────┘   (SCD2 -- range join on __START_AT/__END_AT)
+Dim_Location ───────┤
+Dim_Street ─────────┼──< Fact_City_Observations >── gold_daily_summary
+Dim_Technique ──────┤                            └── gold_location_summary
+Dim_Audit ──────────┘
 ```
 
-Two independent fact tables, not one combined fact — Kimball grain-purity:
-`Dim_Location` and `Dim_Street` share no key and no real-world overlap (a real
-query confirmed zero coordinate overlap between them), so combining their
-facts into a single table would force a false relationship between two
-unrelated measurement processes.
+One fact table, not several — `fact_city_observations` uses an
+`observation_type` discriminator (`'environmental'` / `'traffic'` /
+`'telegram'`) to carry all three measurement domains at one row-per-event
+grain, instead of one fact table per domain. Each branch populates only its
+own measures and leaves the others `NULL`.
 
 ## Tables and surrogate keys
 
 | Table | Type | Surrogate key (PK) | Natural key | Notes |
 |---|---|---|---|---|
-| `Dim_Date` | Materialized view | `date_key` (int, `YYYYMMDD`) | `full_date` | Generated, no source file |
-| `Dim_Location` | Materialized view | `location_key` (int) | `location` | 13 rows — `location=7` excluded (bad coordinates, rejected at Silver) |
-| `stg_dim_street_scd2` | Streaming table | — (internal CDC plumbing, not a public dimension) | `street_id` | `AUTO CDC FROM SNAPSHOT` target; not part of this model |
-| `Dim_Street` | Materialized view | `street_key` (int) | `street_id` + `__START_AT` | SCD2 — full version history, `is_current` flag |
-| `Fact_Traffic_Counts` | Materialized view | — (no surrogate; natural grain is `id`+`location_key`+`date_key`) | — | 24,681,794 rows, one per `silver_traffic` row |
-| `Fact_Street_Conditions` | Materialized view | — (grain is `street_key`+`date_key`, many rows per pair) | — | 87,776,721 rows, one per accepted `silver_environment` row |
-| `gold_monthly_traffic_summary` | Materialized view | — (grain is `location_key`+`year`+`month`) | — | 140 rows (14 location groups incl. NULL x 10 months) |
-| `gold_street_risk_summary` | Materialized view | — (grain is `street_id`+`year`+`month`) | — | 360 rows (36 streets x 10 months) |
+| `dim_date` | Materialized view | `date_key` (int, `YYYYMMDD`) | `full_date` | Generated, no source file |
+| `dim_location` | Materialized view | `location_key` (int) | `location` | 13 rows — `location=7` excluded (bad coordinates, rejected at Silver) |
+| `stg_dim_street_scd2` | Streaming table | — (internal CDC plumbing, not a public dimension) | `street_id` | `AUTO CDC FROM SNAPSHOT` target |
+| `dim_street` | Materialized view | `street_key` (int) | `street_id` + `__START_AT` | SCD2 — full version history, `is_current` flag, 36 streets |
+| `dim_technique` | Materialized view | `technique_key` (int) | `technique_name` | Static, 4 rows — `autoloader`/`copyinto`/`dlt`/`pyspark`, the real techniques used anywhere in this pipeline (matches `pipelines.silver.traffic.SOURCE_TECHNIQUES` exactly) |
+| `dim_audit` | Materialized view | `audit_key` (int) | `(load_dt, source_format, source_file, run_id)` | Junk dimension consolidating lineage metadata — 6 distinct combinations on the real dataset |
+| `dim_time` | Materialized view | `time_key` (int, `HHMMSS`) | `(hour, minute, second)` | Generated, one row per second of day — 86,400 rows |
+| `fact_city_observations` | Materialized view | — (grain is `observation_type` + the fact-side natural key) | — | 112,586,955 rows (87,776,721 environmental + 24,681,794 traffic + 128,440 telegram) |
+| `gold_daily_summary` | Materialized view | `date_key` | — | 283 rows (one per real date, June 2023 – March 2024) |
+| `gold_location_summary` | Materialized view | — (`location_key` nullable, see orphan below) | — | 14 rows (13 real locations + 1 `NULL` group) |
 
-## Audit column lineage: carried through from Bronze, not regenerated per layer
+## Fact/dimension categorization
 
-`load_dt`/`source_format`/`source_file`/`run_id` originate once, at Bronze
-ingestion, and are carried through Silver and into every Gold table
-unchanged -- Gold no longer calls `add_audit_columns()` to stamp its own
-fresh values. Two categories of exception:
+Facts hold foreign keys, additive measures, and degenerate identifiers.
+Dimensions hold descriptive/classifying attributes — including numeric ones
+(`dim_time.hour`, `dim_street.dangerous`) that are never aggregated, only
+filtered/grouped on or resolved to the version active at a point in time.
 
-- **Dimensions and facts carry through their upstream source's audit
-  columns.** `Dim_Location`/`Dim_Street` select them straight from
-  `silver_locations`/`stg_dim_street_scd2` (itself carried through
-  `AUTO CDC FROM SNAPSHOT` from `silver_streets` -- confirmed live that
-  untracked source columns pass through the CDC flow unchanged).
-  `Fact_Traffic_Counts`/`Fact_Street_Conditions` carry through their
-  *fact-side* table's columns specifically (`silver_traffic`/
-  `silver_environment`), not `Dim_Location`/`Dim_Street`/`Dim_Date`'s --
-  those are pure lookups in the join, and a fact row's real lineage is the
-  fact record it came from, not whichever dimension row it resolved to.
-- **`Dim_Date` and the two aggregate tables keep their own "generated"
-  stamp.** `Dim_Date` has no Bronze file behind it at all (a calendar is
-  computed, not ingested). `gold_monthly_traffic_summary`/
-  `gold_street_risk_summary` are `GROUP BY` aggregates over potentially
-  millions of source rows each -- there is no single row's lineage to carry
-  through an aggregation, so these keep `source_format="generated"` with a
-  fresh `load_dt`/`run_id` reflecting when the aggregate was actually
-  computed.
+- **`fact_city_observations`** measures: `noise`, `pollution`, `light`,
+  `raining` (environmental); `enter`, `exit` (traffic); `message_count`,
+  `message_length` (telegram). FKs: `street_key`, `location_key`, `date_key`,
+  `time_key`, `technique_key`, `audit_key`. `observation_type` is a
+  degenerate discriminator (a tiny 3-value tag, not normalized into its own
+  dimension — a deliberate simplicity trade-off); `observation_id` is a
+  degenerate dimension (identifier, no attributes of its own).
+- **`dim_technique.technique_key`** replaces what used to be a raw
+  `source_technique STRING` sitting directly in a fact table — `enter`/`exit`
+  rows resolve their real, per-row-varying technique via a join on
+  `traffic.source_technique == dim_technique.technique_name`; environmental
+  and telegram rows resolve to the single `"copyinto"` technique (verified:
+  both real Bronze sources behind them use `copy_into`), via a `crossJoin`
+  against a one-row lookup rather than a per-row equi-join.
+- **`dim_audit.audit_key`** replaces the 4 raw audit columns
+  (`load_dt`/`source_format`/`source_file`/`run_id`) that used to sit
+  directly on every fact/dimension row with a single FK.
 
-Verified live post-full-refresh: every carried-through table's `load_dt`
-reflects the real original Bronze/Silver ingestion time (`2026-07-13`), not
-the Gold refresh's own run time, and `Fact_Traffic_Counts.source_file`
-correctly varies across all 4 real Bronze files (`chunk1.csv`/`chunk2.csv`/
-`chunk3.json`/`chunk4.xml`) depending on which technique a given row came
-from -- confirming per-row lineage survives the join, not just a single
-fixed value at the table level.
+## Audit column lineage — two patterns, by design
+
+- **`dim_date`, `dim_location`, `dim_street`** carry the standard 4 audit
+  columns, selected straight through from their Silver source (or, for
+  `dim_date`, stamped fresh as `source_format="generated"` since there's no
+  Bronze file behind a calendar).
+- **`dim_technique` and `dim_time`** carry **no** audit columns at all —
+  both are pure generated/static reference tables with nothing meaningful to
+  stamp (no source file, no per-row lineage), one step further than
+  `dim_date`'s "generated" exception.
+- **`fact_city_observations`** carries lineage via `audit_key` (an FK into
+  `dim_audit`), not raw columns — this is the one place lineage is
+  normalized rather than duplicated per row.
+- **`gold_daily_summary` / `gold_location_summary`** keep their own raw
+  audit columns stamped fresh as `source_format="generated"` — both are
+  `GROUP BY` aggregates over millions of rows, so there's no single row's
+  lineage to carry through, same reasoning as any aggregate table in this
+  project.
 
 ## Foreign keys (intended relationships)
 
 | From | Column | To | Column |
 |---|---|---|---|
-| `Fact_Traffic_Counts` | `location_key` | `Dim_Location` | `location_key` |
-| `Fact_Traffic_Counts` | `date_key` | `Dim_Date` | `date_key` |
-| `Fact_Street_Conditions` | `street_key` | `Dim_Street` | `street_key` |
-| `Fact_Street_Conditions` | `date_key` | `Dim_Date` | `date_key` |
+| `fact_city_observations` | `street_key` | `dim_street` | `street_key` |
+| `fact_city_observations` | `location_key` | `dim_location` | `location_key` |
+| `fact_city_observations` | `date_key` | `dim_date` | `date_key` |
+| `fact_city_observations` | `time_key` | `dim_time` | `time_key` |
+| `fact_city_observations` | `technique_key` | `dim_technique` | `technique_key` |
+| `fact_city_observations` | `audit_key` | `dim_audit` | `audit_key` |
+| `gold_daily_summary` | `date_key` | `dim_date` | `date_key` |
+| `gold_location_summary` | `location_key` | `dim_location` | `location_key` |
 
-## Known, expected orphan: `Fact_Traffic_Counts.location_key`
+`date_key`/`time_key`/`technique_key`/`audit_key` are declared `NOT NULL` on
+`fact_city_observations` and verified live at **0 NULLs** across all three
+observation types, post-full-refresh.
 
-2,373,327 of 24,681,794 rows (all real `location=7` traffic readings) have a
+## Known, expected orphan: `location_key`
+
+Traffic rows for `location=7` (2,373,327 of 24,681,794 traffic rows) have a
 `NULL` `location_key` — `location=7`'s coordinates were quarantined at
-Silver (`silver_locations_rejected`), so it was correctly excluded from
-`Dim_Location`, but traffic sensor readings for that location still exist
-(a separate domain). This is surfaced deliberately via a `LEFT JOIN`
-(an `INNER JOIN` would have silently dropped these rows instead), not a bug.
+Silver (`silver_locations_rejected`), so it's correctly excluded from
+`dim_location`, but its sensor readings still exist as a real, separate
+domain. `gold_location_summary` surfaces this as a `NULL`-keyed 14th group
+(13 real locations + this orphan) rather than silently dropping it —
+verified live.
 
 ## Business aggregates
 
-Two materialized views roll the fact tables up to a monthly grain:
+- **`gold_daily_summary`** — one row per date. `total_vehicles_entered`,
+  `total_vehicles_exited`, `net_traffic_flow` (traffic rows only);
+  `avg_noise`, `avg_pollution`, `avg_light`, `avg_raining` (environmental
+  rows only); `telegram_message_count` (telegram rows only);
+  `total_observations` (all three combined). Each measure is a conditional
+  `SUM`/`AVG` scoped to its own `observation_type` via `F.when(...)` inside
+  a single `GROUP BY date_key` — no joins needed, since the unified fact
+  already puts all three domains on the same table. Verified live: 283
+  rows, 0 NULLs across every measure, real date range 2023-06-02 to
+  2024-03-10.
+- **`gold_location_summary`** — one row per location, filtered to
+  `observation_type == 'traffic'` first. `total_vehicles_entered`,
+  `total_vehicles_exited`, `total_traffic_volume`, `total_traffic_readings`.
+  Answers "busiest intersections": verified live, `location_key=6` is the
+  single busiest location (123,752,573 total volume), `location_key=3` is
+  second (113,936,208) — consistent with this project's independently
+  documented finding that location 6 dominates traffic volume.
 
-- **`gold_monthly_traffic_summary`** — `Fact_Traffic_Counts` grouped by
-  `location_key` x calendar month, with `busiest_rank_in_month` (a
-  descending rank of `total_traffic_volume` within each month) making
-  "top-10 busiest intersections" a trivial `WHERE busiest_rank_in_month <=
-  10` filter. Verified: 140 rows = 14 location groups (13 real locations +
-  1 `NULL` group carrying `location=7`'s orphaned readings, same orphan
-  documented above) x 10 months in the observed date range. Real result,
-  checked live: `location_key=6` is the busiest intersection in 9 of the
-  10 observed months (peaking at 13,695,050 in August 2023); `location_key=3`
-  is the only other location to break into the overall top 10 (rank 2,
-  August 2023).
-- **`gold_street_risk_summary`** — `Fact_Street_Conditions` grouped by
-  `street_id` x calendar month, joined back to `Dim_Street`'s full SCD2
-  history to pick up the `dangerous` rating in effect that month
-  (`dangerous_rating_this_month` uses `F.first()`, not `F.avg()` — an
-  average over millions of rows of a value that's constant per SCD2
-  version introduced floating-point summation drift on the order of
-  1e-14, enough to make a genuinely unchanged rating misreport as
-  "increased"/"decreased"; `F.first()` reads the stored value directly
-  with no accumulation error). `risk_changed_flag` (crosses the 0.5
-  safe/dangerous threshold) and `risk_direction` (`increased`/
-  `decreased`/`stable`) compare each street's rating against the prior
-  calendar month via `LAG`. Verified: 360 rows = 36 streets x 10 months,
-  `risk_changed_flag = true` for 0 rows and `risk_direction = "stable"`
-  for all 360 — expected on this first build, since every street still has
-  exactly one `Dim_Street` SCD2 version and there is no real rating change
-  yet to detect. This becomes a meaningful signal once a street's
-  `dangerous` score actually changes across a `Dim_Street` refresh.
+Every Gold table (dimensions, fact, and both aggregates) lives in the one
+`gold_dlt_pipeline` DLT pipeline, run via `gold_job`.
 
-Both aggregates run as part of `gold_job` (`resources/jobs/gold_job.yml`) --
-there is no separate aggregates job. Every Gold table (dimensions, facts,
-and both aggregates) lives in the one `gold_dlt_pipeline` DLT pipeline, so a
-`pipeline_task` is all-or-nothing at the job level: DLT's own dependency
-graph and incremental engine decide internally what actually needs
-recomputing on a refresh, and there's no way to scope a job to just the
-aggregate tables. An earlier `gold_aggregates_job` existed briefly as a
-separate, identically-configured job pointing at the same pipeline -- pure
-duplication with `gold_job`, not a narrower trigger -- and was removed for
-that reason. Bronze and Silver each have exactly one job per pipeline; Gold
-now follows the same convention.
+## Constraint enforcement — real, registered UC constraints
 
-## Constraint enforcement — real, registered UC constraints, declared at table-creation time
+Lakeflow Declarative Pipelines accepts `PRIMARY KEY`/`FOREIGN KEY`
+constraints declared inline in the `schema=` argument of `@dlt.table`, at
+the moment the table is created — see `src/pipelines/gold/table_schemas.py`
+for every table's full column schema plus constraints. Confirmed live via
+`information_schema.table_constraints`/`key_column_usage`: every constraint
+is really registered, and `information_schema.tables.table_type` still
+reports `MATERIALIZED_VIEW` throughout. Databricks documents UC PK/FK as
+**informational only** (not enforced like an RDBMS constraint at write
+time) — these exist for catalog lineage/documentation/BI-tool discovery,
+not to reject bad writes. Plain column-level `NOT NULL` (distinct from
+PK/FK) **is** enforced at write time by Delta — confirmed live when
+`dim_technique.technique_key`'s inferred `LongType` was rejected against
+its declared `INT NOT NULL`.
 
-**Update:** an earlier version of this doc concluded that PK/FK constraints
-could not be attached to Gold tables at all, because `ALTER TABLE ... ADD
-CONSTRAINT` fails against every one of them:
+`gold_location_summary` has no `PRIMARY KEY`: its grain is `location_key`,
+but `location_key` is legitimately `NULL` for the orphan group above — a
+`PRIMARY KEY` member can't be `NULL`. Its `FOREIGN KEY` is unaffected, since
+FK columns are allowed to be `NULL`.
 
-```
-[EXPECT_TABLE_NOT_VIEW.NO_ALTERNATIVE] 'ALTER TABLE ... ADD CONSTRAINT'
-expects a table but `...`.`dim_location` is a view.
-```
+## Real bugs caught and fixed while building this model
 
-That's still true, but it turned out to be a limitation of `ALTER TABLE`
-specifically (a *post-hoc* DDL statement issued against an already-created,
-view-registered object), not a limitation of Unity Catalog constraints on
-materialized views in general. Lakeflow Declarative Pipelines supports
-declaring `PRIMARY KEY`/`FOREIGN KEY` constraints **inline in the `schema=`
-argument of `@dlt.table`**, at the moment the table is created by the
-pipeline itself — a different code path that Unity Catalog does accept for
-materialized views. Every `@dlt.table(...)` in
-`src/pipelines/gold/dlt_gold_tables.py` now declares its full column schema
-plus its constraints this way, e.g.:
+- **Timestamp/date join mismatch**: joining `environment.date`/`traffic.date`
+  (TIMESTAMP, real time-of-day) directly against `dim_date.full_date`
+  (DATE) without `F.to_date()` silently resolved `date_key` to `NULL` for
+  almost every real row. Fixed by casting to `DATE` before the join.
+- **Hardcoded `technique_key`**: originally stamped as a constant for every
+  traffic row, discarding the real per-row variation across all 4
+  ingestion techniques. Fixed with a real join on `source_technique`.
+- **`Int`/`Long` schema mismatch**: `spark.createDataFrame()` infers
+  Python int literals as `LongType`, but `dim_technique.technique_key` is
+  declared `INT` — Delta rejected the write (`DELTA_MERGE_INCOMPATIBLE_DATATYPE`)
+  until the column was explicitly cast.
+- **Eager `.collect()` breaking DLT flow resolution**: an early version of
+  the technique lookup called `.collect()` to resolve a scalar, which forced
+  execution during DLT's graph-analysis pass — before `dim_technique` (a
+  sibling table in the *same* pipeline run) had actually been computed.
+  Fixed by keeping the lookup fully lazy (a `crossJoin` against a one-row
+  DataFrame, resolved at real execution time in the correct dependency
+  order) rather than collecting a Python scalar.
+- **Unqualified column after `withColumn()` on an aliased DataFrame**:
+  `telegram_df.alias("telegram").withColumn("time_key", ...)` — the new
+  `time_key` column doesn't carry the `"telegram"` alias, so
+  `F.col("telegram.time_key")` failed to resolve. Fixed by referencing the
+  column unqualified.
 
-```python
-@dlt.table(
-    name="dim_location",
-    comment=_DIM_LOCATION_CFG["description"],
-    schema="""
-        location_key    INT     NOT NULL,
-        location        INT,
-        latitude        DOUBLE,
-        longitude       DOUBLE,
-        load_dt         TIMESTAMP,
-        source_format   STRING,
-        source_file     STRING,
-        run_id          STRING,
-        CONSTRAINT dim_location_pk PRIMARY KEY (location_key)
-    """,
-)
-```
-
-Confirmed live, post-full-refresh deploy, by querying
-`information_schema.table_constraints` and `information_schema.key_column_usage`
-in `vstone_traffic_dev`: every constraint below is really registered against
-its table, with the correct column(s) --
-
-| Table | Constraint | Type | Column(s) |
-|---|---|---|---|
-| `dim_date` | `dim_date_pk` | PRIMARY KEY | `date_key` |
-| `dim_location` | `dim_location_pk` | PRIMARY KEY | `location_key` |
-| `dim_street` | `dim_street_pk` | PRIMARY KEY | `street_key` |
-| `fact_traffic_counts` | `fact_traffic_counts_location_fk` | FOREIGN KEY | `location_key` -> `dim_location.location_key` |
-| `fact_traffic_counts` | `fact_traffic_counts_date_fk` | FOREIGN KEY | `date_key` -> `dim_date.date_key` |
-| `fact_street_conditions` | `fact_street_conditions_street_fk` | FOREIGN KEY | `street_key` -> `dim_street.street_key` |
-| `fact_street_conditions` | `fact_street_conditions_date_fk` | FOREIGN KEY | `date_key` -> `dim_date.date_key` |
-| `gold_monthly_traffic_summary` | `gold_monthly_traffic_summary_location_fk` | FOREIGN KEY | `location_key` -> `dim_location.location_key` |
-| `gold_street_risk_summary` | `gold_street_risk_summary_pk` | PRIMARY KEY | `street_id`, `year`, `month` (composite) |
-
-`information_schema.tables.table_type` still reports `MATERIALIZED_VIEW` for
-every one of these (confirmed unchanged) -- attaching a constraint this way
-does not convert the table to a plain Delta table, and the materialized-view
-design is fully preserved. Databricks still documents UC PK/FK as
-**informational only** (not enforced like an RDBMS foreign key at write
-time), so these constraints exist for catalog lineage/documentation/BI-tool
-discovery purposes, not to reject bad writes.
-
-Two intentional gaps in the table above, both load-bearing design decisions:
-
-- **`gold_monthly_traffic_summary` has no `PRIMARY KEY`.** Its grain is
-  `(location_key, year, month)`, but `location_key` is legitimately `NULL`
-  for 10 of its 140 rows (the `location=7` orphan, see above) -- a primary
-  key member can't be `NULL`, so no PK is declared. Its `FOREIGN KEY` on
-  `location_key` is unaffected, since FK columns are allowed to be `NULL`.
-- **`gold_street_risk_summary` has no `FOREIGN KEY` to `Dim_Street`.**
-  `Dim_Street`'s primary key is the surrogate `street_key`, not `street_id`
-  -- `street_id` repeats across SCD2 versions by design, so it isn't unique
-  in `Dim_Street` and can't be a valid FK target there.
-
-Two real column-type bugs were caught and fixed while writing these schema
-strings, both against the actual Silver source schemas
-(`src/config/silver_schemas.py`): `Dim_Street.long` (street length in
-meters) is `INT`, not `DOUBLE` -- a first draft of this schema declared it
-as `DOUBLE`, which would have mismatched `silver_streets.long`'s real
-`IntegerType`. Same for `Fact_Traffic_Counts.id`, which is `INT`
-(`silver_traffic.id` is `IntegerType`), not `STRING`. Verified post-deploy
-via `dtypes` on the live tables.
-
-All full-refreshed and re-verified after this change: row counts unchanged
-and still exact (`fact_traffic_counts` 24,681,794, `fact_street_conditions`
-87,776,721, `gold_monthly_traffic_summary` 140, `gold_street_risk_summary`
-360).
+All verified full-refreshed and re-verified live in `vstone_traffic_dev`.

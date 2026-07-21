@@ -14,6 +14,10 @@ throughout -- see docs/gold_data_model.md for the full writeup.
 """
 from __future__ import annotations
 
+# ============================================================================
+# Dimension tables
+# ============================================================================
+
 DIM_DATE_SCHEMA = """
     date_key        INT     NOT NULL,
     full_date       DATE,
@@ -62,83 +66,126 @@ DIM_STREET_SCHEMA = """
     CONSTRAINT dim_street_pk PRIMARY KEY (street_key)
 """
 
-FACT_TRAFFIC_COUNTS_SCHEMA = """
-    location_key        INT,
-    date_key            INT,
-    id                  INT,
-    enter               INT,
-    exit                INT,
-    source_technique    STRING,
-    load_dt             TIMESTAMP,
+DIM_TECHNIQUE_SCHEMA = """
+    technique_key       INT     NOT NULL,
+    technique_name      STRING  NOT NULL,
+    technique_type      STRING,
+    description         STRING,
+    supports_streaming  BOOLEAN,
+    created_date        DATE,
+    CONSTRAINT dim_technique_pk PRIMARY KEY (technique_key)
+"""
+
+DIM_AUDIT_SCHEMA = """
+    audit_key           INT         NOT NULL,
+    load_dt             TIMESTAMP   NOT NULL,
     source_format       STRING,
     source_file         STRING,
-    run_id              STRING,
-    CONSTRAINT fact_traffic_counts_location_fk
-        FOREIGN KEY (location_key) REFERENCES dim_location(location_key),
-    CONSTRAINT fact_traffic_counts_date_fk
-        FOREIGN KEY (date_key) REFERENCES dim_date(date_key)
+    run_id              STRING      NOT NULL,
+    created_timestamp   TIMESTAMP,
+    CONSTRAINT dim_audit_pk PRIMARY KEY (audit_key)
 """
 
-FACT_STREET_CONDITIONS_SCHEMA = """
-    street_key      INT,
-    date_key        INT,
-    noise           DOUBLE,
-    pollution       DOUBLE,
-    light           DOUBLE,
-    raining         DOUBLE,
-    load_dt         TIMESTAMP,
-    source_format   STRING,
-    source_file     STRING,
-    run_id          STRING,
-    CONSTRAINT fact_street_conditions_street_fk
+DIM_TIME_SCHEMA = """
+    time_key            INT     NOT NULL,
+    full_time           STRING  NOT NULL,
+    hour                INT     NOT NULL,
+    minute              INT     NOT NULL,
+    second              INT     NOT NULL,
+    hour_12             INT,
+    am_pm               STRING,
+    time_of_day         STRING,
+    is_business_hours   BOOLEAN,
+    minute_of_day       INT,
+    second_of_day       LONG,
+    CONSTRAINT dim_time_pk PRIMARY KEY (time_key)
+"""
+
+# ============================================================================
+# fact_city_observations -- the one Gold fact table. observation_type
+# discriminates between 'environmental'/'traffic'/'telegram' rows; each
+# branch populates its own measures and leaves the others NULL.
+# ============================================================================
+
+FACT_CITY_OBSERVATIONS_SCHEMA = """
+    observation_type    STRING  NOT NULL,
+    street_key          INT,
+    location_key        INT,
+    date_key            INT     NOT NULL,
+    time_key            INT     NOT NULL,
+    technique_key       INT     NOT NULL,
+    audit_key           INT     NOT NULL,
+    noise               DOUBLE,
+    pollution           DOUBLE,
+    light               DOUBLE,
+    raining             DOUBLE,
+    enter               INT,
+    exit                INT,
+    message_count       INT,
+    message_length      INT,
+    observation_id      STRING,
+    CONSTRAINT fact_city_observations_street_fk
         FOREIGN KEY (street_key) REFERENCES dim_street(street_key),
-    CONSTRAINT fact_street_conditions_date_fk
+    CONSTRAINT fact_city_observations_location_fk
+        FOREIGN KEY (location_key) REFERENCES dim_location(location_key),
+    CONSTRAINT fact_city_observations_date_fk
+        FOREIGN KEY (date_key) REFERENCES dim_date(date_key),
+    CONSTRAINT fact_city_observations_time_fk
+        FOREIGN KEY (time_key) REFERENCES dim_time(time_key),
+    CONSTRAINT fact_city_observations_technique_fk
+        FOREIGN KEY (technique_key) REFERENCES dim_technique(technique_key),
+    CONSTRAINT fact_city_observations_audit_fk
+        FOREIGN KEY (audit_key) REFERENCES dim_audit(audit_key)
+"""
+
+# ============================================================================
+# gold_daily_summary -- simple daily rollup of fact_city_observations
+# ============================================================================
+
+# No cluster_by/partition spec: at one row per date (~283 rows on the real
+# dataset), partitioning by date_key would create one tiny file per
+# partition with no pruning benefit -- same reasoning already applied
+# elsewhere in this project for small aggregate tables.
+GOLD_DAILY_SUMMARY_SCHEMA = """
+    date_key                    INT     NOT NULL,
+    total_vehicles_entered      BIGINT,
+    total_vehicles_exited       BIGINT,
+    net_traffic_flow            BIGINT,
+    avg_noise                   DOUBLE,
+    avg_pollution               DOUBLE,
+    avg_light                   DOUBLE,
+    avg_raining                 DOUBLE,
+    telegram_message_count      BIGINT,
+    total_observations          BIGINT,
+    load_dt                     TIMESTAMP,
+    source_format                STRING,
+    source_file                 STRING,
+    run_id                      STRING,
+    CONSTRAINT gold_daily_summary_pk PRIMARY KEY (date_key),
+    CONSTRAINT gold_daily_summary_date_fk
         FOREIGN KEY (date_key) REFERENCES dim_date(date_key)
 """
 
-# No PRIMARY KEY: the grain is (location_key, year, month), but location_key
-# is legitimately NULL for 10 of 140 rows (the location=7 orphan -- real
-# silver_traffic readings for a location excluded from Dim_Location at
-# Silver for bad coordinates, see docs/gold_data_model.md). A PRIMARY KEY
-# member can't be NULL. The FOREIGN KEY below is unaffected -- FK columns
-# are allowed to be NULL, same as Fact_Traffic_Counts.location_key.
-GOLD_MONTHLY_TRAFFIC_SUMMARY_SCHEMA = """
+# ============================================================================
+# gold_location_summary -- simple per-location traffic rollup, answers the
+# brief's "busiest intersections" question
+# ============================================================================
+
+# No PRIMARY KEY: location_key is legitimately NULL for one group (the
+# location=7 orphan -- traffic readings whose location was excluded from
+# Dim_Location at Silver for bad coordinates, see docs/gold_data_model.md).
+# A PRIMARY KEY member can't be NULL. The FOREIGN KEY below is unaffected --
+# FK columns are allowed to be NULL.
+GOLD_LOCATION_SUMMARY_SCHEMA = """
     location_key                INT,
-    year                        INT,
-    month                       INT,
-    total_enter                 LONG,
-    total_exit                  LONG,
-    total_traffic_volume        LONG,
-    avg_daily_traffic_volume    DOUBLE,
-    busiest_rank_in_month       INT,
+    total_vehicles_entered      BIGINT,
+    total_vehicles_exited       BIGINT,
+    total_traffic_volume        BIGINT,
+    total_traffic_readings      BIGINT,
     load_dt                     TIMESTAMP,
     source_format               STRING,
     source_file                 STRING,
     run_id                      STRING,
-    CONSTRAINT gold_monthly_traffic_summary_location_fk
+    CONSTRAINT gold_location_summary_location_fk
         FOREIGN KEY (location_key) REFERENCES dim_location(location_key)
-"""
-
-# No FOREIGN KEY to dim_street: Dim_Street's primary key is the surrogate
-# street_key, not street_id -- street_id repeats across SCD2 versions by
-# design, so it isn't unique in Dim_Street and can't be a valid FK target
-# there. street_id/year/month are verified NOT NULL in real data (0 nulls
-# found live), safe to declare as the PK.
-GOLD_STREET_RISK_SUMMARY_SCHEMA = """
-    street_id                       INT     NOT NULL,
-    year                            INT     NOT NULL,
-    month                           INT     NOT NULL,
-    avg_noise                       DOUBLE,
-    avg_pollution                   DOUBLE,
-    avg_light                       DOUBLE,
-    rain_event_count                LONG,
-    dangerous_rating_this_month     DOUBLE,
-    dangerous_rating_prior_month    DOUBLE,
-    risk_changed_flag               BOOLEAN,
-    risk_direction                  STRING,
-    load_dt                         TIMESTAMP,
-    source_format                   STRING,
-    source_file                     STRING,
-    run_id                          STRING,
-    CONSTRAINT gold_street_risk_summary_pk PRIMARY KEY (street_id, year, month)
 """
