@@ -10,6 +10,10 @@ Dim_Technique ──────┤                                ├── agg
 Dim_Audit ──────────┘                                └── agg_hourly_telegram_activity
 ```
 
+Full ERD, with every column, PK/FK, and cardinality:
+
+![Gold layer dimensional model — star schema ERD](gold_layer_dimensional_model.png)
+
 One fact table, not several — `fact_city_observations` uses an
 `observation_type` discriminator (`'environmental'` / `'traffic'` /
 `'telegram'`) to carry all three measurement domains at one row-per-event
