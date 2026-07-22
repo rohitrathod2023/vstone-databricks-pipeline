@@ -277,6 +277,42 @@ for label, liquid_avg, benchmark_avg in summary_rows:
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ### Chart — grouped bar comparison, Liquid Clustering vs. Partition+Z-order
+# MAGIC **Read this alongside the caveat above**, not in isolation: the deployed
+# MAGIC `fact_city_observations` clusters on `date_key` only, so Liquid
+# MAGIC Clustering gets no data-skipping benefit at all from these queries'
+# MAGIC `street_key` predicate -- this chart shows a real measured result, not
+# MAGIC an apples-to-apples verdict on the two technologies.
+
+# COMMAND ----------
+
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+
+labels = [label for label, _, _ in summary_rows]
+liquid_times = [liquid_avg for _, liquid_avg, _ in summary_rows]
+partz_times = [benchmark_avg for _, _, benchmark_avg in summary_rows]
+
+x = np.arange(len(labels))
+width = 0.35
+
+fig, ax = plt.subplots(figsize=(10, 6))
+bars1 = ax.bar(x - width / 2, liquid_times, width, label="Liquid Clustering (date_key only)", color="#0F6E6A")
+bars2 = ax.bar(x + width / 2, partz_times, width, label="Partition + Z-order (on street_key)", color="#B45309")
+
+ax.set_ylabel("Avg warm query time (s)")
+ax.set_title("Liquid Clustering vs. Partition+Z-order — real measured times")
+ax.set_xticks(x)
+ax.set_xticklabels(labels, rotation=10, ha="right")
+ax.legend()
+ax.bar_label(bars1, fmt="%.2fs", padding=3)
+ax.bar_label(bars2, fmt="%.2fs", padding=3)
+plt.tight_layout()
+plt.show()
+
+# COMMAND ----------
+
 evidence = {
     "liquid_table": LIQUID_TABLE,
     "benchmark_table": BENCHMARK_TABLE,

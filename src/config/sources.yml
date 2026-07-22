@@ -224,7 +224,7 @@ dim_time:
 fact_city_observations:
   technique: delta_live_tables
   target_table: ${catalog}.${gold_schema}.fact_city_observations
-  description: Unified fact table (observation_type discriminator) combining silver_traffic/environment/telegram into one row-per-observation grain.
+  description: Unified fact table combining silver_traffic/environment/telegram into one row-per-observation grain, branches identified by measure-nullness (no discriminator column).
 
 # ---------------------------------------------------------------------------
 # Gold Phase 7 — business aggregate tables
