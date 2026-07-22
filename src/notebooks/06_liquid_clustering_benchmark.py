@@ -1,22 +1,30 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Liquid Clustering vs. partitioning + Z-ordering benchmark — Day 7
-# MAGIC Real, measured comparison on `fact_street_conditions` (~87.8M rows) --
-# MAGIC the biggest table in Gold (bigger than `fact_traffic_counts`'s 24.68M
-# MAGIC rows) and the one most likely to be filtered/joined on
-# MAGIC `street_key`/`date_key` in real queries. `fact_traffic_counts` has a
-# MAGIC simpler, straight-aggregation access pattern, so it's not used here.
+# MAGIC Real, measured comparison on `fact_city_observations` (112.6M rows) --
+# MAGIC the one unified fact table in Gold (this project's fact tables were later
+# MAGIC merged from separate `fact_street_conditions`/`fact_traffic_counts` tables
+# MAGIC into one `fact_city_observations` with an `observation_type` discriminator
+# MAGIC -- see `docs/gold_data_model.md`). Superseded an earlier version of this
+# MAGIC notebook that targeted the old, now-retired `fact_street_conditions`.
 # MAGIC
-# MAGIC Liquid Clustering itself is applied directly to `fact_street_conditions`
-# MAGIC via `cluster_by=["street_key", "date_key"]` on its `@dlt.table` decorator
-# MAGIC (see `dlt_gold_tables.py`) -- `ALTER TABLE ... CLUSTER BY` cannot be
-# MAGIC applied post-hoc to this table (confirmed live:
+# MAGIC **Read `docs/liquid_clustering_benchmark.md`'s "Important caveat" section
+# MAGIC before trusting these numbers at face value** -- the deployed
+# MAGIC `fact_city_observations` currently clusters on `date_key` alone (not
+# MAGIC `street_key`), so this run does not test Liquid Clustering and Z-ordering
+# MAGIC on equal footing for the `street_key`-filtered queries below. It's a real,
+# MAGIC useful result, just not the one the naive reading suggests.
+# MAGIC
+# MAGIC Liquid Clustering itself is applied directly to `fact_city_observations`
+# MAGIC via `cluster_by=[...]` on its `@dlt.table` decorator (see
+# MAGIC `dlt_gold_tables.py`) -- `ALTER TABLE ... CLUSTER BY` cannot be applied
+# MAGIC post-hoc to this table (confirmed live:
 # MAGIC `EXPECT_TABLE_NOT_VIEW.NO_ALTERNATIVE`, the same limitation already hit
 # MAGIC with PK/FK constraints), so `cluster_by` is declared at table-creation
 # MAGIC time instead, same pattern as `schema=`.
 # MAGIC
 # MAGIC This notebook builds the comparison side: a plain (non-DLT) Delta table,
-# MAGIC `fact_street_conditions_zorder_benchmark`, partitioned by year/month and
+# MAGIC `fact_city_observations_zorder_benchmark`, partitioned by year/month and
 # MAGIC `OPTIMIZE ... ZORDER BY (street_key)`'d -- a benchmark artifact only, not
 # MAGIC part of the documented Gold data model / ER diagram / PK-FK set. Then it
 # MAGIC runs the same representative queries against both tables and records
@@ -49,9 +57,9 @@ from pyspark.sql import functions as F  # noqa: E402
 
 from utils.config_loader import get_source_config  # noqa: E402
 
-LIQUID_TABLE = get_source_config("fact_street_conditions", env=env)["target_table"]
+LIQUID_TABLE = get_source_config("fact_city_observations", env=env)["target_table"]
 GOLD_SCHEMA = LIQUID_TABLE.rsplit(".", 2)[1]
-BENCHMARK_TABLE = f"{catalog}.{GOLD_SCHEMA}.fact_street_conditions_zorder_benchmark"
+BENCHMARK_TABLE = f"{catalog}.{GOLD_SCHEMA}.fact_city_observations_zorder_benchmark"
 
 print(f"Liquid Clustering table: {LIQUID_TABLE}")
 print(f"Partition+Z-order benchmark table: {BENCHMARK_TABLE}")
@@ -60,7 +68,7 @@ print(f"Partition+Z-order benchmark table: {BENCHMARK_TABLE}")
 
 # MAGIC %md
 # MAGIC ## Build the comparison table
-# MAGIC Same source data as `fact_street_conditions`, plus derived `year`/`month`
+# MAGIC Same source data as `fact_city_observations`, plus derived `year`/`month`
 # MAGIC columns (not present on the real table) so the table can be partitioned
 # MAGIC by them -- a plain `CREATE OR REPLACE TABLE`, not a DLT table, so it's
 # MAGIC unambiguously a one-off benchmark artifact.
@@ -94,20 +102,19 @@ print(f"OPTIMIZE ... ZORDER BY (street_key) complete on {BENCHMARK_TABLE}.")
 # MAGIC %md
 # MAGIC ## Row-count parity check
 # MAGIC The benchmark table must be a faithful copy -- same row count as
-# MAGIC `fact_street_conditions`'s already-verified accepted-row count from
-# MAGIC `silver_environment` (87,776,721), not a sample.
+# MAGIC `fact_city_observations`'s already-verified row count (112,586,955).
 
 # COMMAND ----------
 
 liquid_count = spark.table(LIQUID_TABLE).count()
 benchmark_count = spark.table(BENCHMARK_TABLE).count()
-print(f"fact_street_conditions row count: {liquid_count}")
-print(f"fact_street_conditions_zorder_benchmark row count: {benchmark_count}")
+print(f"fact_city_observations row count: {liquid_count}")
+print(f"fact_city_observations_zorder_benchmark row count: {benchmark_count}")
 
-if liquid_count != 87_776_721 or benchmark_count != 87_776_721:
+if liquid_count != 112_586_955 or benchmark_count != 112_586_955:
     raise RuntimeError(
-        f"STOP: expected both tables at 87,776,721 rows (the already-verified silver_environment "
-        f"accepted count), got liquid={liquid_count}, benchmark={benchmark_count}."
+        f"STOP: expected both tables at 112,586,955 rows (the already-verified fact_city_observations "
+        f"row count), got liquid={liquid_count}, benchmark={benchmark_count}."
     )
 
 # COMMAND ----------
@@ -131,14 +138,22 @@ print(f"street_key=1, August 2023 row count: {sample_month_count} (confirms a re
 # MAGIC %md
 # MAGIC ## Benchmark queries
 # MAGIC Each table is queried using its own natural column set for the access
-# MAGIC pattern -- `fact_street_conditions` filters on `date_key` directly
-# MAGIC (relying on Liquid Clustering over `street_key`/`date_key`), the
-# MAGIC benchmark table filters on the partition columns `year`/`month` plus
-# MAGIC `street_key` (relying on partition pruning + Z-order). Filtering the
-# MAGIC partitioned table on `date_key` alone -- ignoring the partition columns
-# MAGIC it was actually organized by -- would be an unfair, unrealistic test
-# MAGIC (no partition pruning could occur at all), not a like-for-like
-# MAGIC comparison of each strategy queried the way it's meant to be queried.
+# MAGIC pattern -- `fact_city_observations` filters on `street_key`/`date_key`
+# MAGIC directly, the benchmark table filters on the partition columns
+# MAGIC `year`/`month` plus `street_key`. Filtering the partitioned table on
+# MAGIC `date_key` alone -- ignoring the partition columns it was actually
+# MAGIC organized by -- would be an unfair, unrealistic test (no partition
+# MAGIC pruning could occur at all), not a like-for-like comparison of each
+# MAGIC strategy queried the way it's meant to be queried.
+# MAGIC
+# MAGIC **Caveat (see docs/liquid_clustering_benchmark.md for the full writeup):**
+# MAGIC the deployed `fact_city_observations` currently clusters on `date_key`
+# MAGIC alone, not `(street_key, date_key)` -- so Liquid Clustering gets no
+# MAGIC data-skipping benefit at all from the `street_key` predicate these
+# MAGIC queries use, while the benchmark table is deliberately `ZORDER BY
+# MAGIC (street_key)`. This is not an equal-footing test of the two
+# MAGIC technologies; it mostly demonstrates that a clustering key has to
+# MAGIC actually match the query's filter columns to help.
 # MAGIC
 # MAGIC 3 runs each, first run discarded as cold cache, remaining runs averaged.
 
