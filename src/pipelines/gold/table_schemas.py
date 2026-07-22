@@ -102,13 +102,14 @@ DIM_TIME_SCHEMA = """
 """
 
 # ============================================================================
-# fact_city_observations -- the one Gold fact table. observation_type
-# discriminates between 'environmental'/'traffic'/'telegram' rows; each
-# branch populates its own measures and leaves the others NULL.
+# fact_city_observations -- the one Gold fact table. ALTERNATIVE DESIGN,
+# pending trainer review: no observation_type/observation_id discriminator
+# columns. Branch membership (environmental/traffic/telegram) is inferred
+# by consumers from which measures are populated -- see
+# docs/fact_table_without_discriminator_alternative.md.
 # ============================================================================
 
 FACT_CITY_OBSERVATIONS_SCHEMA = """
-    observation_type    STRING  NOT NULL,
     street_key          INT,
     location_key        INT,
     date_key            INT     NOT NULL,
@@ -123,7 +124,6 @@ FACT_CITY_OBSERVATIONS_SCHEMA = """
     exit                INT,
     vehicle_plate_id    INT,
     message_count       INT,
-    observation_id      STRING,
     CONSTRAINT fact_city_observations_street_fk
         FOREIGN KEY (street_key) REFERENCES dim_street(street_key),
     CONSTRAINT fact_city_observations_location_fk

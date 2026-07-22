@@ -21,8 +21,10 @@ def build_agg_hourly_telegram_activity(
     (date_key, hour).
 
     Args:
-        fact_city_observations_df: fact_city_observations (observation_type,
-            date_key, time_key, message_count, ...).
+        fact_city_observations_df: fact_city_observations (date_key,
+            time_key, message_count, ...) -- ALTERNATIVE schema, no
+            observation_type column (see
+            docs/fact_table_without_discriminator_alternative.md).
         dim_date_df: Date dimension, for calendar attributes.
         dim_time_df: Time dimension, for time_key -> hour lookup.
 
@@ -39,15 +41,18 @@ def build_agg_hourly_telegram_activity(
         table referenced it and would fail with UNRESOLVED_COLUMN against
         the current schema.
 
-        Filtered to observation_type == 'telegram' first (matches the other
-        3 agg_* tables' convention), not message_count.isNotNull().
+        Filtered to message_count.isNotNull() to identify telegram rows --
+        there's no observation_type discriminator on this branch. Safe by
+        construction: fact_city_observations.py's telegram branch always
+        stamps message_count as F.lit(1) (never conditionally null), and no
+        other branch ever populates it.
 
         Grain is (date_key, hour), not (date_key, time_key) -- `hour` isn't
         dim_time's PRIMARY KEY, so this table declares no FOREIGN KEY to
         dim_time (see table_schemas.py's AGG_HOURLY_TELEGRAM_ACTIVITY_SCHEMA
         for why).
     """
-    telegram_facts = fact_city_observations_df.filter(F.col("observation_type") == "telegram")
+    telegram_facts = fact_city_observations_df.filter(F.col("message_count").isNotNull())
 
     with_hour = telegram_facts.join(
         dim_time_df.select("time_key", "hour"),

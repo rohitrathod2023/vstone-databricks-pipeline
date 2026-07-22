@@ -13,10 +13,12 @@
 # MAGIC materialized views for aggregation/dimension-style tables that can be
 # MAGIC fully recomputed each refresh.
 # MAGIC
-# MAGIC **Unified fact design:** one fact table, `fact_city_observations`,
-# MAGIC combines traffic, environmental, and telegram observations via an
-# MAGIC `observation_type` discriminator, resolved against `dim_date`,
-# MAGIC `dim_location`, `dim_street`, `dim_technique`, and `dim_audit`.
+# MAGIC **Unified fact design (ALTERNATIVE, pending trainer review):** one
+# MAGIC fact table, `fact_city_observations`, combines traffic, environmental,
+# MAGIC and telegram observations with NO discriminator column -- branch
+# MAGIC membership is inferred from which measures are populated (see
+# MAGIC docs/fact_table_without_discriminator_alternative.md), resolved against
+# MAGIC `dim_date`, `dim_location`, `dim_street`, `dim_technique`, and `dim_audit`.
 # MAGIC `agg_daily_street_conditions`, `agg_daily_location_traffic`,
 # MAGIC `agg_monthly_street_summary`, and `agg_hourly_telegram_activity` roll it
 # MAGIC up further, each at its own street/location/date/hour grain.
@@ -257,7 +259,10 @@ def dim_time():
     name="fact_city_observations",
     comment=_FACT_CITY_OBSERVATIONS_CFG["description"],
     schema=FACT_CITY_OBSERVATIONS_SCHEMA,
-    cluster_by=["observation_type", "date_key"],
+    # No observation_type to cluster by on this branch (see table_schemas.py) --
+    # date_key is still the single most common filter across every agg_*
+    # table and business query, so it stays the clustering key on its own.
+    cluster_by=["date_key"],
 )
 def fact_city_observations():
     # Source data

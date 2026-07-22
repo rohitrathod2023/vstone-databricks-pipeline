@@ -1,7 +1,10 @@
 """Unit tests for pipelines.gold.agg_daily_street_conditions -- daily
-environmental rollup per street. Focused on the real bug found in review:
-summing `raining` directly would let the -1 "not raining" sentinel silently
-subtract from the total.
+environmental rollup per street. ALTERNATIVE DESIGN, pending trainer review:
+fact_city_observations has no observation_type column on this branch --
+environmental rows are identified via noise.isNotNull() instead (see
+docs/fact_table_without_discriminator_alternative.md). Also covers the real
+bug found in review: summing `raining` directly would let the -1 "not
+raining" sentinel silently subtract from the total.
 
 Run locally:
     pip install -r tests/requirements.txt
@@ -31,11 +34,10 @@ def spark():
 
 
 def _obs_df(spark, rows):
-    from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType
+    from pyspark.sql.types import DoubleType, IntegerType, StructField, StructType
 
     schema = StructType(
         [
-            StructField("observation_type", StringType()),
             StructField("street_key", IntegerType()),
             StructField("date_key", IntegerType()),
             StructField("noise", DoubleType()),
@@ -65,7 +67,7 @@ def _build(spark, rows):
 
 
 def test_schema_matches_expected_shape(spark):
-    result = _build(spark, [("environmental", 1, 20240101, 10.0, 5.0, 20.0, 0.3)])
+    result = _build(spark, [(1, 20240101, 10.0, 5.0, 20.0, 0.3)])
 
     expected_columns = {
         "street_key", "street_id", "street", "date_key", "full_date", "year", "month", "day_name", "is_weekend",
@@ -84,9 +86,9 @@ def test_rain_intensity_sum_excludes_the_negative_sentinel(spark):
     result = _build(
         spark,
         [
-            ("environmental", 1, 20240101, 10.0, 5.0, 20.0, 5.0),
-            ("environmental", 1, 20240101, 10.0, 5.0, 20.0, -1.0),
-            ("environmental", 1, 20240101, 10.0, 5.0, 20.0, -1.0),
+            (1, 20240101, 10.0, 5.0, 20.0, 5.0),
+            (1, 20240101, 10.0, 5.0, 20.0, -1.0),
+            (1, 20240101, 10.0, 5.0, 20.0, -1.0),
         ],
     )
     row = result.collect()[0]
@@ -96,13 +98,16 @@ def test_rain_intensity_sum_excludes_the_negative_sentinel(spark):
     assert row["observation_count"] == 3
 
 
-def test_only_environmental_rows_are_aggregated(spark):
+def test_only_rows_with_noise_populated_are_aggregated(spark):
+    """No observation_type column on this branch -- environmental rows are
+    identified via noise.isNotNull(). Rows shaped like traffic/telegram
+    (noise/pollution/light/raining all NULL) must be excluded."""
     result = _build(
         spark,
         [
-            ("environmental", 1, 20240101, 10.0, 5.0, 20.0, 0.3),
-            ("traffic", 1, 20240101, None, None, None, None),
-            ("telegram", 1, 20240101, None, None, None, None),
+            (1, 20240101, 10.0, 5.0, 20.0, 0.3),
+            (1, 20240101, None, None, None, None),
+            (1, 20240101, None, None, None, None),
         ],
     )
 
@@ -120,9 +125,9 @@ def test_measures_are_grouped_per_street_and_date_not_mixed(spark):
     obs_df = _obs_df(
         spark,
         [
-            ("environmental", 1, 20240101, 10.0, 5.0, 20.0, 0.3),
-            ("environmental", 1, 20240101, 20.0, 7.0, 30.0, 0.5),
-            ("environmental", 2, 20240101, 100.0, 50.0, 5.0, 0.0),
+            (1, 20240101, 10.0, 5.0, 20.0, 0.3),
+            (1, 20240101, 20.0, 7.0, 30.0, 0.5),
+            (2, 20240101, 100.0, 50.0, 5.0, 0.0),
         ],
     )
     result = build_agg_daily_street_conditions(obs_df, dim_street_df, _dim_date_df(spark))

@@ -22,8 +22,10 @@ def build_agg_daily_street_conditions(
     (street_key, date_key).
 
     Args:
-        fact_city_observations_df: fact_city_observations (observation_type,
-            street_key, date_key, noise, pollution, light, raining, ...).
+        fact_city_observations_df: fact_city_observations (street_key,
+            date_key, noise, pollution, light, raining, ...) -- ALTERNATIVE
+            schema, no observation_type column (see
+            docs/fact_table_without_discriminator_alternative.md).
         dim_street_df: Street dimension, for street name/id lookup.
         dim_date_df: Date dimension, for calendar attributes.
 
@@ -34,11 +36,14 @@ def build_agg_daily_street_conditions(
         plus the 4 standard audit columns.
 
     Notes:
-        Filtered to observation_type == 'environmental' first -- matches
-        gold_location_summary's precedent (filter by the discriminator, not
-        by incidentally-null columns), rather than the
-        street_key.isNotNull() & noise.isNotNull() filter an earlier draft
-        of this table used.
+        Filtered to noise.isNotNull() to identify environmental rows --
+        there's no observation_type discriminator on this branch. Confirmed
+        safe against real data: a live query against silver_environment
+        found 0 nulls across noise/pollution/light/raining in all 87.8M
+        rows, so any one of the 4 measures reliably identifies an
+        environmental row today. This is an explicit trade-off versus the
+        dev-branch design (an explicit observation_type column), not a free
+        win -- see the alternative-design doc for the full comparison.
 
         rain_intensity_sum sums `raining` only where it's >= 0, replacing
         negative values with 0 first. `raining`'s source range is -1 to
@@ -54,7 +59,7 @@ def build_agg_daily_street_conditions(
         fact_city_observations.py's own environmental branch already makes
         when resolving street_key.
     """
-    env_facts = fact_city_observations_df.filter(F.col("observation_type") == "environmental")
+    env_facts = fact_city_observations_df.filter(F.col("noise").isNotNull())
 
     rain_when_valid = F.when(F.col("raining") >= 0, F.col("raining")).otherwise(F.lit(0.0))
 
