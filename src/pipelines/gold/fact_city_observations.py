@@ -1,7 +1,18 @@
 """fact_city_observations - Unified fact table for all city observations.
 
+ALTERNATIVE DESIGN, pending trainer review -- not yet adopted on dev. See
+docs/fact_table_without_discriminator_alternative.md for the full write-up.
+This branch removes observation_type and observation_id (both present on
+dev's current fact_city_observations) and instead relies on the fact that
+each branch's own measures are reliably non-null/null in a way that lets a
+consumer infer which branch a row came from without an explicit tag --
+confirmed safe against real data for all 3 branches (see the doc).
+
 Combines environmental sensor readings, traffic counts, and telegram messages
-into a single polymorphic fact table using an observation_type discriminator.
+into a single polymorphic fact table with no discriminator column -- branch
+membership is inferred from which measures are populated (`enter`/`exit` for
+traffic, `noise`/`pollution`/`light`/`raining` for environmental,
+`message_count` for telegram).
 
 Grain: One row per observation event (sensor reading, traffic count, or message).
 Size: ~112.6M rows (87.8M environmental + 24.7M traffic + 128K telegram).
@@ -48,9 +59,9 @@ def _single_technique_lookup(dim_technique_df: DataFrame, technique_name: str) -
     Staying lazy (a crossJoin, not a collect) lets Spark/DLT resolve this
     against dim_technique's real output at actual execution time, in the
     correct dependency order. If technique_name has no match, this returns
-    zero rows and the crossJoin below makes the affected observation_type
-    disappear entirely from the union -- a loud, easy-to-catch row-count
-    failure, not a silent NULL.
+    zero rows and the crossJoin below makes the affected branch
+    (environmental or telegram) disappear entirely from the union -- a
+    loud, easy-to-catch row-count failure, not a silent NULL.
     """
     return dim_technique_df.filter(F.col("technique_name") == technique_name).select(
         F.col("technique_key").alias("_single_technique_key")
@@ -70,12 +81,13 @@ def build_fact_city_observations(
     """
     Build unified fact_city_observations combining environmental, traffic, and telegram data.
 
-    Uses observation_type discriminator pattern:
-        - 'environmental': has street_key, env measures, NULL traffic/telegram measures
-        - 'traffic': has location_key, traffic measures, NULL env/telegram measures
-        - 'telegram': has NO street/location, telegram measures, NULL env/traffic measures
+    No discriminator column -- branch membership is inferred by consumers
+    from which measures are populated:
+        - environmental: has street_key, env measures, NULL traffic/telegram measures
+        - traffic: has location_key, traffic measures, NULL env/telegram measures
+        - telegram: has NO street/location, telegram measures, NULL env/traffic measures
 
-    All observation types share: date_key, time_key, technique_key, audit_key
+    All branches share: date_key, time_key, technique_key, audit_key
 
     Args:
         traffic_df: Silver traffic table
@@ -126,7 +138,9 @@ def _build_environmental_observations(
     """
     Transform environmental silver data into fact observations.
 
-    observation_type = 'environmental'
+    Inferred type: environmental (identify via noise/pollution/light/raining
+    IS NOT NULL -- confirmed live, zero nulls across all 4 measures in the
+    real 87.8M-row silver_environment).
     FK: street_key (yes), location_key (NULL), date_key, time_key, technique_key, audit_key
     Measures: noise, pollution, light, raining
     """
@@ -164,7 +178,6 @@ def _build_environmental_observations(
 
     # Build environmental fact
     return env_with_technique.select(
-        F.lit("environmental").alias("observation_type"),
         # Foreign keys
         F.col("street.street_key"),
         F.lit(None).cast("int").alias("location_key"),
@@ -183,8 +196,6 @@ def _build_environmental_observations(
         F.lit(None).cast("int").alias("vehicle_plate_id"),
         # Telegram measures (NULL)
         F.lit(None).cast("int").alias("message_count"),
-        # Degenerate dimension
-        F.concat(F.lit("env_"), F.col("env.street_id"), F.lit("_"), F.col("date.date_key")).alias("observation_id"),
     )
 
 
@@ -198,7 +209,9 @@ def _build_traffic_observations(
     """
     Transform traffic silver data into fact observations.
 
-    observation_type = 'traffic'
+    Inferred type: traffic (identify via enter/exit IS NOT NULL --
+    confirmed by the original dimensional-model profiling: zero nulls in
+    silver_traffic's key columns).
     FK: street_key (NULL), location_key (yes), date_key, time_key, technique_key, audit_key
     Measures: enter, exit
     Degenerate dimension: vehicle_plate_id (Kaggle "id", 0-998)
@@ -246,7 +259,6 @@ def _build_traffic_observations(
 
     # Build traffic fact
     return traffic_with_audit.select(
-        F.lit("traffic").alias("observation_type"),
         # Foreign keys
         F.lit(None).cast("int").alias("street_key"),
         F.col("location.location_key"),
@@ -271,10 +283,6 @@ def _build_traffic_observations(
         F.col("traffic.id").alias("vehicle_plate_id"),
         # Telegram measures (NULL)
         F.lit(None).cast("int").alias("message_count"),
-        # Degenerate dimension
-        F.concat(F.lit("traffic_"), F.col("traffic.location"), F.lit("_"), F.col("date.date_key")).alias(
-            "observation_id"
-        ),
     )
 
 
@@ -287,7 +295,9 @@ def _build_telegram_observations(
     """
     Transform telegram silver data into fact observations.
 
-    observation_type = 'telegram'
+    Inferred type: telegram (identify via message_count IS NOT NULL --
+    safe by construction, message_count is always F.lit(1) below, never
+    conditionally null).
     FK: street_key (NULL), location_key (NULL), date_key, time_key, technique_key, audit_key
     Measures: message_count
 
@@ -323,7 +333,6 @@ def _build_telegram_observations(
 
     # Build telegram fact
     return telegram_with_technique.select(
-        F.lit("telegram").alias("observation_type"),
         # Foreign keys
         F.lit(None).cast("int").alias("street_key"),
         F.lit(None).cast("int").alias("location_key"),
@@ -345,8 +354,4 @@ def _build_telegram_observations(
         F.lit(None).cast("int").alias("vehicle_plate_id"),
         # Telegram measures (SIMPLE!)
         F.lit(1).alias("message_count"),
-        # Degenerate dimension
-        F.concat(F.lit("telegram_"), F.col("date.date_key"), F.lit("_"), F.col("time_key")).alias(
-            "observation_id"
-        ),
     )

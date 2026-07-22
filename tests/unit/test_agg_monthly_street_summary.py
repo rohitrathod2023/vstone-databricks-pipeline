@@ -1,6 +1,10 @@
 """Unit tests for pipelines.gold.agg_monthly_street_summary -- monthly
-environmental rollup per street. Focused on the real bug found in review:
-days_with_rain must count distinct rainy days, not raw sensor readings.
+environmental rollup per street. ALTERNATIVE DESIGN, pending trainer review:
+no observation_type column -- environmental rows are identified via
+noise.isNotNull() instead (see
+docs/fact_table_without_discriminator_alternative.md). Also covers the real
+bug found in review: days_with_rain must count distinct rainy days, not raw
+sensor readings.
 
 Run locally:
     pip install -r tests/requirements.txt
@@ -30,11 +34,10 @@ def spark():
 
 
 def _obs_df(spark, rows):
-    from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType
+    from pyspark.sql.types import DoubleType, IntegerType, StructField, StructType
 
     schema = StructType(
         [
-            StructField("observation_type", StringType()),
             StructField("street_key", IntegerType()),
             StructField("date_key", IntegerType()),
             StructField("noise", DoubleType()),
@@ -70,7 +73,7 @@ def _build(spark, rows, dim_date_df=None):
 
 
 def test_schema_matches_expected_shape(spark):
-    result = _build(spark, [("environmental", 1, 20240101, 10.0, 5.0, 20.0, 0.3)])
+    result = _build(spark, [(1, 20240101, 10.0, 5.0, 20.0, 0.3)])
 
     expected_columns = {
         "street_key", "street_id", "street", "dangerous", "year", "month", "avg_noise", "avg_pollution",
@@ -88,11 +91,11 @@ def test_days_with_rain_counts_distinct_days_not_raw_readings(spark):
         spark,
         [
             # 3 rainy readings, all on the same day (20240101).
-            ("environmental", 1, 20240101, 10.0, 5.0, 20.0, 5.0),
-            ("environmental", 1, 20240101, 10.0, 5.0, 20.0, 8.0),
-            ("environmental", 1, 20240101, 10.0, 5.0, 20.0, 2.0),
+            (1, 20240101, 10.0, 5.0, 20.0, 5.0),
+            (1, 20240101, 10.0, 5.0, 20.0, 8.0),
+            (1, 20240101, 10.0, 5.0, 20.0, 2.0),
             # 1 non-rainy day.
-            ("environmental", 1, 20240102, 10.0, 5.0, 20.0, -1.0),
+            (1, 20240102, 10.0, 5.0, 20.0, -1.0),
         ],
     )
     row = result.collect()[0]
@@ -102,12 +105,14 @@ def test_days_with_rain_counts_distinct_days_not_raw_readings(spark):
     assert row["observation_days"] == 2
 
 
-def test_only_environmental_rows_are_aggregated(spark):
+def test_only_rows_with_noise_populated_are_aggregated(spark):
+    """No observation_type column on this branch -- environmental rows are
+    identified via noise.isNotNull()."""
     result = _build(
         spark,
         [
-            ("environmental", 1, 20240101, 10.0, 5.0, 20.0, 0.3),
-            ("traffic", 1, 20240101, None, None, None, None),
+            (1, 20240101, 10.0, 5.0, 20.0, 0.3),
+            (1, 20240101, None, None, None, None),
         ],
     )
 

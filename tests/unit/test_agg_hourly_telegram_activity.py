@@ -1,5 +1,8 @@
 """Unit tests for pipelines.gold.agg_hourly_telegram_activity -- hourly
-telegram message-volume rollup.
+telegram message-volume rollup. ALTERNATIVE DESIGN, pending trainer review:
+no observation_type column -- telegram rows are identified via
+message_count.isNotNull() instead (see
+docs/fact_table_without_discriminator_alternative.md).
 
 Run locally:
     pip install -r tests/requirements.txt
@@ -29,11 +32,10 @@ def spark():
 
 
 def _obs_df(spark, rows):
-    from pyspark.sql.types import IntegerType, StringType, StructField, StructType
+    from pyspark.sql.types import IntegerType, StructField, StructType
 
     schema = StructType(
         [
-            StructField("observation_type", StringType()),
             StructField("date_key", IntegerType()),
             StructField("time_key", IntegerType()),
             StructField("message_count", IntegerType()),
@@ -63,7 +65,7 @@ def _build(spark, rows, dim_time_df=None):
 
 
 def test_schema_matches_expected_shape(spark):
-    result = _build(spark, [("telegram", 20240101, 93000, 1)])
+    result = _build(spark, [(20240101, 93000, 1)])
 
     expected_columns = {
         "date_key", "full_date", "year", "month", "day_name", "is_weekend", "hour", "total_messages",
@@ -78,9 +80,9 @@ def test_messages_are_grouped_by_date_and_hour_not_mixed(spark):
     result = _build(
         spark,
         [
-            ("telegram", 20240101, 93000, 1),  # 09:30 -> hour 9
-            ("telegram", 20240101, 93500, 1),  # 09:35 -> hour 9
-            ("telegram", 20240101, 103000, 1),  # 10:30 -> hour 10
+            (20240101, 93000, 1),  # 09:30 -> hour 9
+            (20240101, 93500, 1),  # 09:35 -> hour 9
+            (20240101, 103000, 1),  # 10:30 -> hour 10
         ],
     )
     rows = {r["hour"]: r for r in result.collect()}
@@ -90,13 +92,15 @@ def test_messages_are_grouped_by_date_and_hour_not_mixed(spark):
     assert rows[10]["total_messages"] == 1
 
 
-def test_only_telegram_rows_are_aggregated(spark):
+def test_only_rows_with_message_count_populated_are_aggregated(spark):
+    """No observation_type column on this branch -- telegram rows are
+    identified via message_count.isNotNull()."""
     result = _build(
         spark,
         [
-            ("telegram", 20240101, 93000, 1),
-            ("traffic", 20240101, 93000, None),
-            ("environmental", 20240101, 93000, None),
+            (20240101, 93000, 1),
+            (20240101, 93000, None),
+            (20240101, 93000, None),
         ],
     )
 

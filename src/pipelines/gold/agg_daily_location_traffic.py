@@ -19,8 +19,10 @@ def build_agg_daily_location_traffic(
     (location_key, date_key).
 
     Args:
-        fact_city_observations_df: fact_city_observations (observation_type,
-            location_key, date_key, enter, exit, ...).
+        fact_city_observations_df: fact_city_observations (location_key,
+            date_key, enter, exit, ...) -- ALTERNATIVE schema, no
+            observation_type column (see
+            docs/fact_table_without_discriminator_alternative.md).
         dim_location_df: Location dimension, for coordinates.
         dim_date_df: Date dimension, for calendar attributes.
 
@@ -31,15 +33,18 @@ def build_agg_daily_location_traffic(
         observation_count, plus the 4 standard audit columns.
 
     Notes:
-        Filtered to observation_type == 'traffic' first, then left-joined to
-        dim_location -- same precedent gold_location_summary already set.
-        Traffic rows for location=7 (quarantined at Silver for bad
-        coordinates, excluded from dim_location) carry a NULL location_key
-        and surface here as their own NULL-keyed group per date, rather than
-        being silently dropped -- see docs/gold_data_model.md's "Known,
-        expected orphan" section.
+        Filtered to enter.isNotNull() to identify traffic rows -- there's no
+        observation_type discriminator on this branch. Confirmed safe
+        against real data: the original dimensional-model profiling found
+        zero nulls in silver_traffic's key columns, including enter/exit.
+        location=7 (quarantined at Silver for bad coordinates, excluded from
+        dim_location) still has real, non-null enter/exit values, so it's
+        correctly included by this filter and surfaces as its own
+        NULL-location_key group per date, rather than being silently
+        dropped -- see docs/gold_data_model.md's "Known, expected orphan"
+        section.
     """
-    traffic_facts = fact_city_observations_df.filter(F.col("observation_type") == "traffic")
+    traffic_facts = fact_city_observations_df.filter(F.col("enter").isNotNull())
 
     daily_agg = traffic_facts.groupBy("location_key", "date_key").agg(
         F.sum("enter").alias("total_enter"),

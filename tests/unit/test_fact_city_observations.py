@@ -1,8 +1,12 @@
 """Unit tests for pipelines.gold.fact_city_observations -- the unified Gold
-fact table. Focused on the two real bugs found in review: date_key
-resolving to NULL for non-midnight timestamps (TIMESTAMP vs. DATE join
-without F.to_date()), and technique_key being hardcoded instead of resolved
-from the real, per-row varying silver_traffic.source_technique column.
+fact table. ALTERNATIVE DESIGN, pending trainer review: no
+observation_type/observation_id columns -- branches are identified by
+measure-nullness instead (see
+docs/fact_table_without_discriminator_alternative.md). Also covers the two
+real bugs found in review: date_key resolving to NULL for non-midnight
+timestamps (TIMESTAMP vs. DATE join without F.to_date()), and technique_key
+being hardcoded instead of resolved from the real, per-row varying
+silver_traffic.source_technique column.
 
 Run locally:
     pip install -r tests/requirements.txt
@@ -151,7 +155,7 @@ def test_date_key_resolves_for_traffic_rows_with_a_non_midnight_timestamp(spark)
         spark,
         traffic_rows=[(100, 1, 5, 3, "2024-01-02T10:00:00", "copyinto") + _TRAFFIC_AUDIT],
     )
-    row = result.filter(result.observation_type == "traffic").collect()[0]
+    row = result.filter(result.enter.isNotNull()).collect()[0]
 
     assert row["date_key"] == 20240102
 
@@ -162,7 +166,7 @@ def test_date_key_resolves_for_environmental_rows_with_a_non_midnight_timestamp(
         spark,
         environment_rows=[(1, "2024-01-02T15:30:00", 10.0, 5.0, 20.0, 0.3) + _ENV_AUDIT],
     )
-    row = result.filter(result.observation_type == "environmental").collect()[0]
+    row = result.filter(result.noise.isNotNull()).collect()[0]
 
     assert row["date_key"] == 20240102
 
@@ -176,7 +180,7 @@ def test_time_key_extracts_hhmmss_for_traffic_rows_not_hardcoded_zero(spark):
         spark,
         traffic_rows=[(100, 1, 5, 3, "2024-01-02T10:15:42", "copyinto") + _TRAFFIC_AUDIT],
     )
-    row = result.filter(result.observation_type == "traffic").collect()[0]
+    row = result.filter(result.enter.isNotNull()).collect()[0]
 
     assert row["time_key"] == 101542
 
@@ -187,7 +191,7 @@ def test_time_key_extracts_hhmmss_for_environmental_rows_not_hardcoded_zero(spar
         spark,
         environment_rows=[(1, "2024-01-02T15:30:07", 10.0, 5.0, 20.0, 0.3) + _ENV_AUDIT],
     )
-    row = result.filter(result.observation_type == "environmental").collect()[0]
+    row = result.filter(result.noise.isNotNull()).collect()[0]
 
     assert row["time_key"] == 153007
 
@@ -203,7 +207,7 @@ def test_traffic_technique_key_resolves_per_row_from_source_technique(spark):
             (101, 1, 6, 4, "2024-01-01T11:00:00", "autoloader") + _TRAFFIC_AUDIT,
         ],
     )
-    rows = {r["enter"]: r for r in result.filter(result.observation_type == "traffic").collect()}
+    rows = {r["enter"]: r for r in result.filter(result.enter.isNotNull()).collect()}
 
     assert rows[5]["technique_key"] == 2  # copyinto
     assert rows[6]["technique_key"] == 1  # autoloader
@@ -219,8 +223,8 @@ def test_environmental_and_telegram_technique_key_resolve_to_the_single_copyinto
         environment_rows=[(1, "2024-01-01T15:30:00", 10.0, 5.0, 20.0, 0.3) + _ENV_AUDIT],
         telegram_rows=[("a report", datetime(2024, 1, 1, 9, 0, 0)) + _TELEGRAM_AUDIT],
     )
-    env_row = result.filter(result.observation_type == "environmental").collect()[0]
-    telegram_row = result.filter(result.observation_type == "telegram").collect()[0]
+    env_row = result.filter(result.noise.isNotNull()).collect()[0]
+    telegram_row = result.filter(result.message_count.isNotNull()).collect()[0]
 
     assert env_row["technique_key"] == 2
     assert telegram_row["technique_key"] == 2
@@ -241,9 +245,8 @@ def test_schema_matches_expected_shape(spark):
     result = _build(spark, traffic_rows=[(100, 1, 5, 3, "2024-01-01T10:00:00", "copyinto") + _TRAFFIC_AUDIT])
 
     expected_columns = {
-        "observation_type", "street_key", "location_key", "date_key", "time_key", "technique_key", "audit_key",
+        "street_key", "location_key", "date_key", "time_key", "technique_key", "audit_key",
         "noise", "pollution", "light", "raining", "enter", "exit", "vehicle_plate_id", "message_count",
-        "observation_id",
     }
     assert set(result.columns) == expected_columns
 
@@ -269,8 +272,8 @@ def test_vehicle_plate_id_is_null_for_environmental_and_telegram_rows(spark):
         environment_rows=[(1, "2024-01-01T15:30:00", 10.0, 5.0, 20.0, 0.3) + _ENV_AUDIT],
         telegram_rows=[("a report", datetime(2024, 1, 1, 9, 0, 0)) + _TELEGRAM_AUDIT],
     )
-    env_row = result.filter(result.observation_type == "environmental").collect()[0]
-    telegram_row = result.filter(result.observation_type == "telegram").collect()[0]
+    env_row = result.filter(result.noise.isNotNull()).collect()[0]
+    telegram_row = result.filter(result.message_count.isNotNull()).collect()[0]
 
     assert env_row["vehicle_plate_id"] is None
     assert telegram_row["vehicle_plate_id"] is None

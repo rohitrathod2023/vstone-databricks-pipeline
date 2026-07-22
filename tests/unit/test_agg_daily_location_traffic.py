@@ -1,5 +1,7 @@
 """Unit tests for pipelines.gold.agg_daily_location_traffic -- daily traffic
-rollup per location.
+rollup per location. ALTERNATIVE DESIGN, pending trainer review: no
+observation_type column -- traffic rows are identified via enter.isNotNull()
+instead (see docs/fact_table_without_discriminator_alternative.md).
 
 Run locally:
     pip install -r tests/requirements.txt
@@ -29,11 +31,10 @@ def spark():
 
 
 def _obs_df(spark, rows):
-    from pyspark.sql.types import IntegerType, StringType, StructField, StructType
+    from pyspark.sql.types import IntegerType, StructField, StructType
 
     schema = StructType(
         [
-            StructField("observation_type", StringType()),
             StructField("location_key", IntegerType()),
             StructField("date_key", IntegerType()),
             StructField("enter", IntegerType()),
@@ -63,7 +64,7 @@ def _build(spark, rows, dim_location_df=None):
 
 
 def test_schema_matches_expected_shape(spark):
-    result = _build(spark, [("traffic", 1, 20240101, 5, 3)])
+    result = _build(spark, [(1, 20240101, 5, 3)])
 
     expected_columns = {
         "location_key", "location", "latitude", "longitude", "date_key", "full_date", "year", "month", "day_name",
@@ -77,8 +78,8 @@ def test_totals_and_net_traffic_are_summed_correctly(spark):
     result = _build(
         spark,
         [
-            ("traffic", 1, 20240101, 5, 3),
-            ("traffic", 1, 20240101, 7, 2),
+            (1, 20240101, 5, 3),
+            (1, 20240101, 7, 2),
         ],
     )
     row = result.collect()[0]
@@ -89,13 +90,16 @@ def test_totals_and_net_traffic_are_summed_correctly(spark):
     assert row["observation_count"] == 2
 
 
-def test_only_traffic_rows_are_aggregated(spark):
+def test_only_rows_with_enter_populated_are_aggregated(spark):
+    """No observation_type column on this branch -- traffic rows are
+    identified via enter.isNotNull(). Rows shaped like environmental/telegram
+    (enter/exit both NULL) must be excluded."""
     result = _build(
         spark,
         [
-            ("traffic", 1, 20240101, 5, 3),
-            ("environmental", None, 20240101, None, None),
-            ("telegram", None, 20240101, None, None),
+            (1, 20240101, 5, 3),
+            (None, 20240101, None, None),
+            (None, 20240101, None, None),
         ],
     )
 
@@ -108,7 +112,7 @@ def test_location_7_orphan_surfaces_as_a_null_keyed_group_not_dropped(spark):
     excluded from dim_location -- its traffic readings still exist as a
     real domain and must surface here with a NULL location_key, matching
     the precedent already documented for gold_location_summary."""
-    result = _build(spark, [("traffic", 7, 20240101, 5, 3)])
+    result = _build(spark, [(7, 20240101, 5, 3)])
     row = result.collect()[0]
 
     assert row["location_key"] == 7

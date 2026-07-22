@@ -19,8 +19,10 @@ def build_agg_monthly_street_summary(
     (street_key, year, month).
 
     Args:
-        fact_city_observations_df: fact_city_observations (observation_type,
-            street_key, date_key, noise, pollution, light, raining, ...).
+        fact_city_observations_df: fact_city_observations (street_key,
+            date_key, noise, pollution, light, raining, ...) --
+            ALTERNATIVE schema, no observation_type column (see
+            docs/fact_table_without_discriminator_alternative.md).
         dim_street_df: Street dimension, for street name/id/danger rating.
         dim_date_df: Date dimension, for year/month.
 
@@ -43,8 +45,12 @@ def build_agg_monthly_street_summary(
         agg_daily_street_conditions' rain_intensity_sum, which sums the
         actual values and would be corrupted by -1 without an explicit
         filter).
+
+        Filtered to noise.isNotNull() to identify environmental rows --
+        same measure-nullness inference as agg_daily_street_conditions.py,
+        confirmed safe against the real 87.8M-row silver_environment.
     """
-    env_facts = fact_city_observations_df.filter(F.col("observation_type") == "environmental")
+    env_facts = fact_city_observations_df.filter(F.col("noise").isNotNull())
 
     with_date = env_facts.join(
         dim_date_df.select("date_key", "year", "month"),
