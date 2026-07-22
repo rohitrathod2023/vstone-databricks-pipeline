@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System 2 Sync — Auto Loader Checkpoint Relocation</title>
+<style>
+  :root{
+    --bg:#f5f6f7; --surface:#ffffff; --ink:#1c2126; --muted:#6b7280; --line:#e2e5e8;
+    --accent:#b5551f; --accent-ink:#ffffff; --screenshot:#2f6690; --screenshot-bg:#eaf2f7;
+    --success:#2f6b40; --success-bg:#eaf4ec; --code-bg:#f0f1f3; --code-ink:#3a3f45;
+    --danger:#8a3a3a; --danger-bg:#fbeeee;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#181b1f; --surface:#20242a; --ink:#edeff1; --muted:#9aa3ac; --line:#2c3138;
+      --accent:#e08a52; --accent-ink:#20140b; --screenshot:#7db3d6; --screenshot-bg:#1c2a33;
+      --success:#7fcf93; --success-bg:#16261a; --code-bg:#171a1e; --code-ink:#d7dbe0;
+      --danger:#e08a8a; --danger-bg:#2a1a1a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#181b1f; --surface:#20242a; --ink:#edeff1; --muted:#9aa3ac; --line:#2c3138;
+    --accent:#e08a52; --accent-ink:#20140b; --screenshot:#7db3d6; --screenshot-bg:#1c2a33;
+    --success:#7fcf93; --success-bg:#16261a; --code-bg:#171a1e; --code-ink:#d7dbe0;
+    --danger:#e08a8a; --danger-bg:#2a1a1a;
+  }
+  :root[data-theme="light"]{
+    --bg:#f5f6f7; --surface:#ffffff; --ink:#1c2126; --muted:#6b7280; --line:#e2e5e8;
+    --accent:#b5551f; --accent-ink:#ffffff; --screenshot:#2f6690; --screenshot-bg:#eaf2f7;
+    --success:#2f6b40; --success-bg:#eaf4ec; --code-bg:#f0f1f3; --code-ink:#3a3f45;
+    --danger:#8a3a3a; --danger-bg:#fbeeee;
+  }
+
+  * { box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  code, pre, .mono, .path{
+    font-family:"Cascadia Code","Cascadia Mono",ui-monospace,"Segoe UI Mono",Consolas,"Courier New",monospace;
+  }
+  .wrap{ max-width:820px; margin:0 auto; padding:0 20px 120px; }
+
+  header.top{ padding:56px 0 28px; border-bottom:1px solid var(--line); }
+  header.top .eyebrow{
+    font-size:12.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 10px;
+  }
+  header.top h1{
+    font-size:clamp(26px,4vw,36px); font-weight:700; margin:0 0 12px; letter-spacing:-.01em;
+    text-wrap:balance;
+  }
+  header.top p{ margin:0; color:var(--muted); max-width:66ch; font-size:15.5px; }
+
+  nav.jump{
+    position:sticky; top:0; z-index:20; background:var(--bg);
+    border-bottom:1px solid var(--line); padding:10px 0;
+    display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;
+  }
+  nav.jump a{
+    flex:1; text-align:center; padding:9px 8px; border-radius:8px; font-size:12.5px;
+    font-weight:600; text-decoration:none; border:1px solid var(--line); color:var(--muted);
+    background:var(--surface); transition:border-color .15s; min-width:110px;
+  }
+  nav.jump a:hover{ border-color:var(--accent); color:var(--accent); }
+
+  .prereq{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:20px 22px; margin:28px 0 8px;
+  }
+  .prereq h2{ font-size:15px; margin:0 0 10px; font-weight:700; }
+  .prereq ul{ margin:0; padding-left:20px; }
+  .prereq li{ margin:5px 0; font-size:14.5px; }
+
+  .part-banner{
+    margin:52px 0 22px; padding:22px 26px; border-radius:14px; color:var(--accent-ink);
+    background:var(--accent); display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
+  }
+  .part-banner .num{ font-size:26px; font-weight:800; letter-spacing:-.01em; }
+  .part-banner .scope{ font-size:14px; opacity:.92; }
+
+  .step{
+    position:relative; background:var(--surface); border:1px solid var(--line);
+    border-radius:12px; padding:20px 22px 22px; margin:14px 0;
+  }
+  .step-head{ display:flex; align-items:flex-start; gap:12px; margin-bottom:4px; }
+  .step-num{
+    flex:none; width:30px; height:30px; border-radius:8px; background:var(--code-bg);
+    color:var(--muted); font-weight:700; font-size:13.5px; display:flex; align-items:center;
+    justify-content:center; font-variant-numeric:tabular-nums;
+  }
+  .step.done .step-num{ background:var(--success-bg); color:var(--success); }
+  .step-title{ font-size:16px; font-weight:700; margin:2px 0 0; flex:1; text-wrap:balance; }
+  .step-why{ color:var(--muted); font-size:13.5px; margin:6px 0 12px 42px; }
+  .step-body{ margin-left:42px; }
+  .step-body p{ margin:8px 0; font-size:14.5px; }
+  .file-chip{
+    display:inline-flex; align-items:center; gap:7px; background:var(--code-bg);
+    border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:13px;
+    margin:4px 0; color:var(--code-ink);
+  }
+  .file-chip .tag{
+    font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+    padding:1px 6px; border-radius:5px;
+  }
+  .tag-new{ background:var(--success-bg); color:var(--success); }
+  .tag-edit{ background:var(--screenshot-bg); color:var(--screenshot); }
+
+  pre{
+    background:var(--code-bg); color:var(--code-ink); border:1px solid var(--line);
+    border-radius:9px; padding:13px 15px; font-size:12.6px; overflow-x:auto; margin:10px 0;
+    line-height:1.5;
+  }
+  .check{
+    position:absolute; top:20px; right:20px; width:20px; height:20px; cursor:pointer;
+    accent-color:var(--success);
+  }
+
+  .shot{
+    display:flex; gap:12px; background:var(--screenshot-bg); border:1px solid var(--screenshot);
+    border-radius:9px; padding:12px 14px; margin:12px 0 4px; align-items:flex-start;
+  }
+  .shot .icon{ flex:none; font-size:18px; line-height:1.3; }
+  .shot .txt{ font-size:13.4px; color:var(--ink); }
+  .shot .txt b{ color:var(--screenshot); }
+
+  .danger{
+    display:flex; gap:12px; background:var(--danger-bg); border:1.5px solid var(--danger);
+    border-radius:9px; padding:14px 16px; margin:12px 0 4px; align-items:flex-start;
+  }
+  .danger .icon{ flex:none; font-size:19px; line-height:1.3; }
+  .danger .txt{ font-size:13.6px; color:var(--ink); }
+  .danger .txt b{ color:var(--danger); }
+
+  .step input[type="checkbox"]:checked ~ .step-body{ opacity:.55; }
+  .step input[type="checkbox"]:checked ~ .step-head .step-title{ text-decoration:line-through; opacity:.6; }
+
+  footer{ margin-top:60px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">vstone-databricks-pipeline · System 2 sync</p>
+    <h1>Auto Loader checkpoint relocation</h1>
+    <p>A small addendum on top of the Bronze explicit-schemas work you already started — moves the streaming checkpoint out of the raw landing Volume into a dedicated <code>ops</code> schema/volume, and splits <code>checkpointLocation</code> from <code>cloudFiles.schemaLocation</code> per Databricks' own guidance. Bundled together with finishing your in-progress deploy so you only redeploy/run/verify once.</p>
+  </header>
+
+  <nav class="jump">
+    <a href="#p1">1 · Config</a>
+    <a href="#p2">2 · Code</a>
+    <a href="#p3">3 · Tests</a>
+    <a href="#p4">4 · Deploy &amp; run</a>
+    <a href="#p5">5 · Git</a>
+  </nav>
+
+  <div class="prereq">
+    <h2>Where you already are</h2>
+    <ul>
+      <li>Branch <code>fix/bronze-explicit-schemas</code>, all 13 config/pipeline/test steps from that runbook done, local tests passing.</li>
+      <li>You already ran <code>databricks bundle validate -t dev</code> and <code>databricks bundle deploy -t dev</code> for that work, but haven't run the 3 verification jobs yet.</li>
+      <li>This guide adds 4 more file changes on the <b>same branch</b>, then does the deploy + run + verify once, covering both changesets together.</li>
+    </ul>
+  </div>
+
+  <div id="p1" class="part-banner">
+    <span class="num">1</span>
+    <span class="scope">Config — new ops schema + volume</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s1"/>
+    <div class="step-head"><div class="step-num">1</div><div class="step-title">Edit src/config/env.yml — add ops_schema</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">src/config/env.yml</span></div>
+      <p>Add one line to each of the 3 environment blocks (right after <code>audit_schema</code>):</p>
+      <pre>dev:
+  catalog: vstone_traffic_dev
+  raw_schema: dev_rohitrathodcomp_raw
+  bronze_schema: dev_rohitrathodcomp_bronze
+  audit_schema: dev_rohitrathodcomp_audit
+  ops_schema: dev_&lt;your_prefix&gt;_ops        # use YOUR account's prefix, matching the others
+
+test:
+  catalog: vstone_traffic_test
+  raw_schema: raw
+  bronze_schema: bronze
+  audit_schema: audit
+  ops_schema: ops
+
+prod:
+  catalog: vstone_traffic_prod
+  raw_schema: raw
+  bronze_schema: bronze
+  audit_schema: audit
+  ops_schema: ops</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s2"/>
+    <div class="step-head"><div class="step-num">2</div><div class="step-title">Edit resources/catalog.yml — add the schema and volume resources</div></div>
+    <div class="step-why">Three buckets, clearly separated: data layers (raw/bronze/silver/gold), human-queryable audit logs, and now pipeline operational state (checkpoints) — no longer mixed into raw.</div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">resources/catalog.yml</span></div>
+      <pre>    audit_schema:
+      name: audit
+      catalog_name: ${var.catalog}
+      comment: Pipeline run logs written by src/common/logger.py.
+
+    ops_schema:                                                      # ADD THIS BLOCK
+      name: ops
+      catalog_name: ${var.catalog}
+      comment: Pipeline operational state (streaming checkpoints, schema tracking) -- decoupled from raw (data), bronze/silver/gold (data), and audit (human-queryable logs).
+
+  volumes:
+    raw_volume:
+      name: raw_volume
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.raw_schema.name}
+      volume_type: MANAGED
+      comment: Landing zone for the 5 raw source files, downloaded directly from Kaggle via src/notebooks/00_download_raw_data.py.
+
+    checkpoints_volume:                                              # ADD THIS BLOCK
+      name: checkpoints_volume
+      catalog_name: ${var.catalog}
+      schema_name: ${resources.schemas.ops_schema.name}
+      volume_type: MANAGED
+      comment: Streaming checkpoints and schema-tracking state (Auto Loader etc.) -- kept out of the raw landing zone since this is pipeline metadata, not data.</pre>
+    </div>
+  </div>
+
+  <div id="p2" class="part-banner">
+    <span class="num">2</span>
+    <span class="scope">Code — rewrite the checkpoint logic</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s3"/>
+    <div class="step-head"><div class="step-num">3</div><div class="step-title">Edit src/pipelines/bronze/autoloader_ingest.py</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">src/pipelines/bronze/autoloader_ingest.py</span></div>
+      <p>Import change:</p>
+      <pre>from common.config_loader import get_env_config, get_source_config, get_source_schema
+# was: from common.config_loader import get_source_config, get_source_schema</pre>
+      <p>Replace the old <code>checkpoint_path()</code> function with these three:</p>
+      <pre>def _checkpoint_root(cfg, env: str = "dev") -> str:
+    """Lives in the dedicated ops schema/volume (see resources/catalog.yml),
+    not the raw landing Volume -- a streaming checkpoint is pipeline
+    operational state, not data, so it shouldn't be nested inside the raw
+    zone. Keyed by target table name so two Auto Loader pipelines never
+    share state."""
+    catalog = cfg["target_table"].split(".")[0]
+    ops_schema = get_env_config(env)["ops_schema"]
+    table_name = cfg["target_table"].rsplit(".", 1)[-1]
+    return f"/Volumes/{catalog}/{ops_schema}/checkpoints_volume/{table_name}"
+
+
+def checkpoint_path(cfg, env: str = "dev") -> str:
+    return f"{_checkpoint_root(cfg, env)}/checkpoint"
+
+
+def schema_location(cfg, env: str = "dev") -> str:
+    """Deliberately a different path from checkpoint_path() -- per Databricks'
+    own guidance, conflating checkpointLocation and cloudFiles.schemaLocation
+    makes it impossible to clear schema-evolution state without also
+    discarding the checkpoint's exactly-once processing history."""
+    return f"{_checkpoint_root(cfg, env)}/schema"</pre>
+      <p><code>build_autoloader_options</code> — rename its 2nd parameter from <code>checkpoint</code> to <code>schema_loc</code>:</p>
+      <pre>def build_autoloader_options(cfg, schema_loc: str):
+    return {
+        "cloudFiles.format": cfg["format"],
+        "cloudFiles.schemaLocation": schema_loc,
+    }</pre>
+      <p>In <code>run_autoloader()</code>, change:</p>
+      <pre>checkpoint = checkpoint_path(cfg)   # OLD</pre>
+      <p>to:</p>
+      <pre>checkpoint = checkpoint_path(cfg, env)
+schema_loc = schema_location(cfg, env)</pre>
+      <p>and change:</p>
+      <pre>for key, value in build_autoloader_options(cfg, checkpoint).items():   # OLD</pre>
+      <p>to:</p>
+      <pre>for key, value in build_autoloader_options(cfg, schema_loc).items():</pre>
+      <p>The later <code>.option("checkpointLocation", checkpoint)</code> line stays exactly as-is — <code>checkpoint</code> is still the right variable there.</p>
+    </div>
+  </div>
+
+  <div id="p3" class="part-banner">
+    <span class="num">3</span>
+    <span class="scope">Tests — update what the relocation breaks</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s4"/>
+    <div class="step-head"><div class="step-num">4</div><div class="step-title">Edit tests/unit/test_autoloader_ingest.py</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">tests/unit/test_autoloader_ingest.py</span></div>
+      <p>Import line — add <code>schema_location</code>:</p>
+      <pre>from pipelines.bronze.autoloader_ingest import (
+    build_autoloader_options,
+    checkpoint_path,
+    schema_location,
+)</pre>
+      <p>Update the options test's call (param renamed) and its assertion value:</p>
+      <pre>options = build_autoloader_options(cfg, schema_loc="/Volumes/cat/ops/checkpoints_volume/table/schema")
+...
+assert options["cloudFiles.schemaLocation"] == "/Volumes/cat/ops/checkpoints_volume/table/schema"</pre>
+      <p>Replace <code>test_checkpoint_path_lives_under_the_same_raw_volume</code> entirely — it tested the exact behavior we just removed:</p>
+      <pre>def test_checkpoint_path_lives_under_the_ops_volume_not_raw():
+    cfg = {"target_table": "vstone_traffic_dev.dev_rohitrathodcomp_bronze.traffic_counts_autoloader"}
+    path = checkpoint_path(cfg, env="dev")
+    assert path.startswith("/Volumes/vstone_traffic_dev/dev_rohitrathodcomp_ops/checkpoints_volume/")
+    assert "raw_volume" not in path</pre>
+      <p>Add a new test confirming the two locations are genuinely separate paths:</p>
+      <pre>def test_checkpoint_and_schema_location_are_different_paths():
+    cfg = {"target_table": "vstone_traffic_dev.dev_rohitrathodcomp_bronze.traffic_counts_autoloader"}
+    assert checkpoint_path(cfg, env="dev") != schema_location(cfg, env="dev")</pre>
+      <p>Update <code>test_checkpoint_path_is_keyed_by_target_table_name</code> — <code>cfg</code> no longer needs a <code>"path"</code> field, and the assertion changes since there's now a <code>/checkpoint</code> suffix after the table name:</p>
+      <pre>def test_checkpoint_path_is_keyed_by_target_table_name():
+    cfg_a = {"target_table": "cat.bronze.table_a"}
+    cfg_b = {**cfg_a, "target_table": "cat.bronze.table_b"}
+    assert checkpoint_path(cfg_a, env="dev") != checkpoint_path(cfg_b, env="dev")
+    assert "/table_a/" in checkpoint_path(cfg_a, env="dev")
+    assert "/table_b/" in checkpoint_path(cfg_b, env="dev")</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s5"/>
+    <div class="step-head"><div class="step-num">5</div><div class="step-title">Run flake8 + pytest locally</div></div>
+    <div class="step-body">
+      <pre>flake8 src tests --max-line-length=120
+pytest tests/unit -v</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — 50 tests passing (was 49 after the schemas work alone; +1 net from these test changes).</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="p4" class="part-banner">
+    <span class="num">4</span>
+    <span class="scope">Deploy, run, and verify — once, for both changesets</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s6"/>
+    <div class="step-head"><div class="step-num">6</div><div class="step-title">Redeploy — this creates the new ops schema/volume</div></div>
+    <div class="step-body">
+      <pre>databricks bundle validate -t dev
+databricks bundle deploy   -t dev</pre>
+      <p>Confirm the new schema actually landed:</p>
+      <pre>databricks schemas list &lt;catalog&gt;
+# should now include: ..._raw, ..._bronze, ..._audit, ..._ops (new)</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="danger">
+      <div class="icon">⚠️</div>
+      <div class="txt"><b>Before running the jobs:</b> if you already dropped the 8 Bronze tables and cleared the old raw_volume checkpoint per the previous runbook's steps 14-15, you're set. If you skipped ahead and haven't done that yet, do it now — otherwise <code>CREATE TABLE IF NOT EXISTS</code> will no-op against tables that still have the old inferred types, and the Auto Loader table specifically also needs a fresh start because relocating its checkpoint makes it treat chunk3.json as unprocessed again (it will otherwise re-append and double the row count).</div>
+    </div>
+    <div class="step-head" style="margin-top:16px"><div class="step-num">7</div><div class="step-title">Confirm (or do now) the table drop + old checkpoint clear</div></div>
+    <div class="step-body">
+      <pre>for t in node_locations street_conditions streets_list telegram traffic_counts_autoloader traffic_counts_copyinto traffic_counts_dlt traffic_counts_pyspark; do
+  databricks tables delete "&lt;catalog&gt;.&lt;dev_prefix&gt;_bronze.$t"
+done
+
+databricks fs rm -r "dbfs:/Volumes/&lt;catalog&gt;/&lt;dev_prefix&gt;_raw/raw_volume/_checkpoints/"</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s8"/>
+    <div class="step-head"><div class="step-num">8</div><div class="step-title">Run all 3 jobs</div></div>
+    <div class="step-body">
+      <pre>databricks bundle run data_chunking_job -t dev
+databricks bundle run bronze_copy_into_job -t dev
+databricks bundle run bronze_autoloader_pyspark_dlt_job -t dev</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — all 3 runs <code>SUCCESS</code>, including the DLT task specifically (check via the run UI or <code>databricks jobs get-run</code> if its output doesn't show inline).</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s9"/>
+    <div class="step-head"><div class="step-num">9</div><div class="step-title">Verify both fixes together</div></div>
+    <div class="step-body">
+      <p><b>Schema fix</b> — every Bronze table's source columns should be <code>STRING</code>:</p>
+      <pre>for t in node_locations street_conditions streets_list telegram traffic_counts_autoloader traffic_counts_copyinto traffic_counts_dlt traffic_counts_pyspark; do
+  echo "=== $t ==="
+  databricks tables get "&lt;catalog&gt;.&lt;dev_prefix&gt;_bronze.$t"
+done</pre>
+      <p><b>Checkpoint fix</b> — should now live under the ops volume, split into two subfolders:</p>
+      <pre>databricks fs ls -l "dbfs:/Volumes/&lt;catalog&gt;/&lt;dev_prefix&gt;_ops/checkpoints_volume/traffic_counts_autoloader/"
+# expect: checkpoint/  and  schema/  -- two separate folders
+
+databricks fs ls "dbfs:/Volumes/&lt;catalog&gt;/&lt;dev_prefix&gt;_raw/raw_volume/"
+# expect: only chunks/ and incoming/ -- no _checkpoints folder at all</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — both the column-type output and the checkpoint file listing together tell the whole story for your documentation.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s10"/>
+    <div class="step-head"><div class="step-num">10</div><div class="step-title">If a stale _checkpoints folder reappeared under raw_volume, delete it</div></div>
+    <div class="step-why">If you ran the job once before making these checkpoint changes (e.g. during earlier verification of the schema fix alone), the old code path may have already recreated _checkpoints/ under raw_volume. New runs won't add to it anymore, but the leftover folder should still be cleaned up.</div>
+    <div class="step-body">
+      <pre>databricks fs ls "dbfs:/Volumes/&lt;catalog&gt;/&lt;dev_prefix&gt;_raw/raw_volume/_checkpoints/" 2&gt;&amp;1
+# if this prints anything at all, remove it:
+databricks fs rm -r "dbfs:/Volumes/&lt;catalog&gt;/&lt;dev_prefix&gt;_raw/raw_volume/_checkpoints/"</pre>
+    </div>
+  </div>
+
+  <div id="p5" class="part-banner">
+    <span class="num">5</span>
+    <span class="scope">Git — one branch, two commits, one PR</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s11"/>
+    <div class="step-head"><div class="step-num">11</div><div class="step-title">Commit both changesets, push, open one PR</div></div>
+    <div class="step-body">
+      <p>Two separate commits on the same branch keeps history readable without the extra branch-juggling — commit the schema work first (if not already committed), then the checkpoint work:</p>
+      <pre>git add src/config/schemas.py src/common/config_loader.py src/common/io_readers.py \
+        src/pipelines/bronze/copy_into.py src/pipelines/bronze/dlt_traffic_counts.py \
+        src/pipelines/bronze/pyspark_xml_ingest.py src/pipelines/ingestion/chunking.py \
+        tests/unit/test_chunking.py tests/unit/test_copy_into.py \
+        tests/unit/test_pyspark_xml_ingest.py tests/unit/test_io_readers.py tests/unit/test_schemas.py
+
+git commit -m "Bronze: replace inferSchema with explicit permissive (string-typed) schemas
+per Databricks' own medallion architecture guidance -- strict typing/
+validation deferred to Silver, not done here."
+
+git add resources/catalog.yml src/config/env.yml \
+        src/pipelines/bronze/autoloader_ingest.py tests/unit/test_autoloader_ingest.py
+
+git commit -m "Auto Loader: move checkpoint out of the raw landing Volume into a dedicated
+ops schema/volume, and split checkpointLocation from cloudFiles.schemaLocation
+into separate paths per Databricks' own guidance."
+
+git push -u origin fix/bronze-explicit-schemas
+
+gh pr create --base dev --head fix/bronze-explicit-schemas \
+  --title "Bronze: explicit string-typed schemas + Auto Loader checkpoint relocation"</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — the PR page once CI (flake8 + pytest) shows green, then merge.</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Checkboxes save locally in this browser tab only — they're for your own pacing, not a submission record.</footer>
+</div>
+
+<script>
+  document.querySelectorAll('.step input[type="checkbox"]').forEach(function(box){
+    var key = 'autoloader-checkpoint-runbook-' + box.id;
+    box.checked = localStorage.getItem(key) === '1';
+    if(box.checked) box.closest('.step').classList.add('done');
+    box.addEventListener('change', function(){
+      localStorage.setItem(key, box.checked ? '1' : '0');
+      box.closest('.step').classList.toggle('done', box.checked);
+    });
+  });
+</script>
+</body>
+</html>

@@ -68,7 +68,6 @@ def build_copy_into_sql(cfg: Dict[str, Any], run_id: str) -> str:
     target_table = cfg["target_table"]
     source_path = cfg["path"]
     source_format = cfg["format"]
-    source_file = source_path.rsplit("/", 1)[-1]
 
     return f"""
         COPY INTO {target_table}
@@ -76,7 +75,12 @@ def build_copy_into_sql(cfg: Dict[str, Any], run_id: str) -> str:
             SELECT {_select_clause(cfg)},
                    current_timestamp() AS load_dt,
                    '{source_format}' AS source_format,
-                   '{source_file}' AS source_file,
+                   -- Derived per-row from the actual file each row was read from
+                   -- (not a literal parsed off cfg["path"]) -- `path` is now a
+                   -- watched folder for some sources, so a single hardcoded
+                   -- name would be wrong for every row once more than one file
+                   -- can land there.
+                   _metadata.file_name AS source_file,
                    '{run_id}' AS run_id
             FROM '{source_path}'
         )

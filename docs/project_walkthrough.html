@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vstone-databricks-pipeline — Project Walkthrough</title>
+<style>
+  :root{
+    --bg:#f5f6f7; --surface:#ffffff; --ink:#1c2126; --muted:#6b7280; --line:#e2e5e8;
+    --accent:#b5551f; --accent-ink:#ffffff; --accent-soft:#f4e6da;
+    --code-bg:#f0f1f3; --code-ink:#3a3f45; --code-line:#dde0e3;
+    --tag-config:#5c6f8a; --tag-config-bg:#eaeef3;
+    --tag-common:#3a6f7a; --tag-common-bg:#e6f0f1;
+    --tag-pipeline:#8a5c3a; --tag-pipeline-bg:#f3ece3;
+    --tag-notebook:#6a5a9a; --tag-notebook-bg:#efecf6;
+    --tag-resource:#3a7a4e; --tag-resource-bg:#e6f3ea;
+    --tag-test:#8a3a5c; --tag-test-bg:#f3e6ec;
+    --day1:#b5551f; --day2:#3a7a4e; --day3:#3a6f9a; --fixup:#8a3a3a;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#171a1e; --surface:#1f232a; --ink:#e8eaed; --muted:#96a0ab; --line:#2c3138;
+      --accent:#e08a52; --accent-ink:#20140b; --accent-soft:#3a2a1c;
+      --code-bg:#14171b; --code-ink:#d8dce1; --code-line:#262b32;
+      --tag-config:#93a6c6; --tag-config-bg:#1c2430;
+      --tag-common:#7fc4d4; --tag-common-bg:#182a2e;
+      --tag-pipeline:#d9a876; --tag-pipeline-bg:#2a2117;
+      --tag-notebook:#b3a3e0; --tag-notebook-bg:#221e30;
+      --tag-resource:#83d19b; --tag-resource-bg:#16261c;
+      --tag-test:#e08ab0; --tag-test-bg:#2a1a22;
+      --day1:#e08a52; --day2:#83d19b; --day3:#7fb3e0; --fixup:#e08a8a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#171a1e; --surface:#1f232a; --ink:#e8eaed; --muted:#96a0ab; --line:#2c3138;
+    --accent:#e08a52; --accent-ink:#20140b; --accent-soft:#3a2a1c;
+    --code-bg:#14171b; --code-ink:#d8dce1; --code-line:#262b32;
+    --tag-config:#93a6c6; --tag-config-bg:#1c2430;
+    --tag-common:#7fc4d4; --tag-common-bg:#182a2e;
+    --tag-pipeline:#d9a876; --tag-pipeline-bg:#2a2117;
+    --tag-notebook:#b3a3e0; --tag-notebook-bg:#221e30;
+    --tag-resource:#83d19b; --tag-resource-bg:#16261c;
+    --tag-test:#e08ab0; --tag-test-bg:#2a1a22;
+    --day1:#e08a52; --day2:#83d19b; --day3:#7fb3e0; --fixup:#e08a8a;
+  }
+  :root[data-theme="light"]{
+    --bg:#f5f6f7; --surface:#ffffff; --ink:#1c2126; --muted:#6b7280; --line:#e2e5e8;
+    --accent:#b5551f; --accent-ink:#ffffff; --accent-soft:#f4e6da;
+    --code-bg:#f0f1f3; --code-ink:#3a3f45; --code-line:#dde0e3;
+    --tag-config:#5c6f8a; --tag-config-bg:#eaeef3;
+    --tag-common:#3a6f7a; --tag-common-bg:#e6f0f1;
+    --tag-pipeline:#8a5c3a; --tag-pipeline-bg:#f3ece3;
+    --tag-notebook:#6a5a9a; --tag-notebook-bg:#efecf6;
+    --tag-resource:#3a7a4e; --tag-resource-bg:#e6f3ea;
+    --tag-test:#8a3a5c; --tag-test-bg:#f3e6ec;
+    --day1:#b5551f; --day2:#3a7a4e; --day3:#3a6f9a; --fixup:#8a3a3a;
+  }
+
+  *{ box-sizing:border-box; }
+  html{ scroll-behavior:smooth; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  code, pre, .mono, .path{
+    font-family:"Cascadia Code","Cascadia Mono",ui-monospace,"Segoe UI Mono",Consolas,"Courier New",monospace;
+  }
+
+  .layout{ display:grid; grid-template-columns:260px minmax(0,1fr); gap:0; max-width:1280px; margin:0 auto; }
+  @media (max-width:900px){ .layout{ grid-template-columns:1fr; } .sidebar{ position:static !important; height:auto !important; } }
+
+  .sidebar{
+    position:sticky; top:0; height:100vh; overflow-y:auto; padding:24px 16px 40px;
+    border-right:1px solid var(--line); background:var(--surface);
+  }
+  .sidebar .brand{ font-size:13px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px; }
+  .sidebar .brand-sub{ font-size:12px; color:var(--muted); margin-bottom:20px; }
+  .sidebar nav{ display:flex; flex-direction:column; gap:2px; }
+  .sidebar .group-label{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin:16px 0 4px; padding:0 10px; }
+  .sidebar a{
+    display:block; padding:6px 10px; border-radius:7px; font-size:13px; color:var(--ink);
+    text-decoration:none; opacity:.8;
+  }
+  .sidebar a:hover{ background:var(--accent-soft); opacity:1; }
+
+  .content{ padding:40px 44px 120px; max-width:900px; }
+
+  header.top{ margin-bottom:36px; }
+  header.top .eyebrow{ font-size:12.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--accent); margin:0 0 10px; }
+  header.top h1{ font-size:clamp(28px,4vw,38px); font-weight:700; margin:0 0 14px; letter-spacing:-.01em; text-wrap:balance; }
+  header.top p{ margin:0; color:var(--muted); font-size:16px; max-width:70ch; }
+
+  section{ margin:56px 0; scroll-margin-top:20px; }
+  section > h2{ font-size:23px; font-weight:700; margin:0 0 6px; letter-spacing:-.01em; scroll-margin-top:20px; }
+  section > .section-sub{ color:var(--muted); font-size:14.5px; margin:0 0 20px; max-width:72ch; }
+
+  .callout{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:18px 20px; margin:16px 0; font-size:14.5px;
+  }
+  .callout.day1{ border-left:4px solid var(--day1); }
+  .callout.day2{ border-left:4px solid var(--day2); }
+  .callout.day3{ border-left:4px solid var(--day3); }
+  .callout.fixup{ border-left:4px solid var(--fixup); }
+
+  .filecard{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:20px 22px; margin:14px 0; scroll-margin-top:20px;
+  }
+  .filecard .fc-head{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+  .filecard .fc-path{ font-size:14.5px; font-weight:700; color:var(--ink); }
+  .tag{
+    font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+    padding:2px 8px; border-radius:5px; white-space:nowrap;
+  }
+  .tag-config{ background:var(--tag-config-bg); color:var(--tag-config); }
+  .tag-common{ background:var(--tag-common-bg); color:var(--tag-common); }
+  .tag-pipeline{ background:var(--tag-pipeline-bg); color:var(--tag-pipeline); }
+  .tag-notebook{ background:var(--tag-notebook-bg); color:var(--tag-notebook); }
+  .tag-resource{ background:var(--tag-resource-bg); color:var(--tag-resource); }
+  .tag-test{ background:var(--tag-test-bg); color:var(--tag-test); }
+
+  .filecard p{ margin:8px 0; font-size:14.5px; }
+  .filecard .deps{ display:flex; gap:18px; flex-wrap:wrap; font-size:13px; color:var(--muted); margin:10px 0; }
+  .filecard .deps b{ color:var(--ink); font-weight:600; }
+  .filecard .deps code{ font-size:12.3px; }
+
+  .fn{ margin:14px 0 0; padding-left:14px; border-left:2px solid var(--line); }
+  .fn .fn-sig{ font-size:13.3px; background:var(--code-bg); color:var(--code-ink); padding:6px 10px; border-radius:6px; display:inline-block; }
+  .fn p{ margin:6px 0 0; font-size:13.8px; color:var(--ink); }
+
+  pre{
+    background:var(--code-bg); color:var(--code-ink); border:1px solid var(--code-line);
+    border-radius:9px; padding:13px 15px; font-size:12.6px; overflow-x:auto; margin:10px 0; line-height:1.55;
+  }
+
+  .tree{ background:var(--code-bg); border:1px solid var(--code-line); border-radius:10px; padding:18px 20px; font-size:13px; overflow-x:auto; }
+  .tree .d{ color:var(--muted); }
+  .tree .f{ color:var(--ink); }
+  .tree .note{ color:var(--muted); }
+
+  .flow{ display:flex; flex-direction:column; gap:0; }
+  .flow-row{ display:flex; align-items:stretch; gap:10px; margin:6px 0; flex-wrap:wrap; }
+  .flow-box{
+    background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:10px 14px;
+    font-size:13px; flex:1; min-width:160px; display:flex; flex-direction:column; justify-content:center;
+  }
+  .flow-box b{ font-size:13.5px; }
+  .flow-box span{ color:var(--muted); font-size:12px; }
+  .flow-arrow{ display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:18px; padding:2px 0; }
+
+  .layer{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px 18px; margin:10px 0;
+  }
+  .layer .layer-label{ font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:10px; }
+  .layer .chips{ display:flex; gap:8px; flex-wrap:wrap; }
+  .layer .chip{ background:var(--code-bg); border:1px solid var(--code-line); border-radius:7px; padding:5px 10px; font-size:12.6px; }
+  .layer-arrow{ text-align:center; color:var(--muted); font-size:16px; margin:2px 0; }
+
+  table.qa{ width:100%; border-collapse:collapse; margin:16px 0; }
+  table.qa th, table.qa td{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); font-size:13.8px; vertical-align:top; }
+  table.qa th{ color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+
+  details{ background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:12px 16px; margin:10px 0; }
+  details summary{ cursor:pointer; font-weight:600; font-size:14px; }
+  details[open] summary{ margin-bottom:10px; }
+
+  footer{ margin-top:60px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">vstone-databricks-pipeline</div>
+    <div class="brand-sub">Project walkthrough &amp; reference</div>
+    <nav>
+      <a href="#overview">Overview</a>
+      <a href="#how-to-read">How this project fits together</a>
+      <a href="#folder-structure">Folder structure</a>
+
+      <div class="group-label">Foundational — config</div>
+      <a href="#f-databricks-yml">databricks.yml</a>
+      <a href="#f-catalog-yml">resources/catalog.yml</a>
+      <a href="#f-env-yml">src/config/env.yml</a>
+      <a href="#f-sources-yml">src/config/sources.yml</a>
+      <a href="#f-schemas-py">src/config/schemas.py</a>
+
+      <div class="group-label">Foundational — common/</div>
+      <a href="#f-config-loader">config_loader.py</a>
+      <a href="#f-io-readers">io_readers.py</a>
+      <a href="#f-audit">audit.py</a>
+      <a href="#f-logger">logger.py</a>
+      <a href="#f-metadata">metadata.py</a>
+      <a href="#f-sanity-checks">sanity_checks.py</a>
+
+      <div class="group-label">Day 1 — Chunking</div>
+      <a href="#day1-chunking">chunking.py</a>
+      <a href="#day1-notebooks">00 / 01 notebooks</a>
+      <a href="#day1-job">data_chunking_job.yml</a>
+
+      <div class="group-label">Day 2 — COPY INTO</div>
+      <a href="#day2-copyinto">copy_into.py</a>
+      <a href="#day2-notebook">02 notebook</a>
+      <a href="#day2-job">bronze_copy_into_job.yml</a>
+
+      <div class="group-label">Day 3 — Auto Loader/XML/DLT</div>
+      <a href="#day3-autoloader">autoloader_ingest.py</a>
+      <a href="#day3-pyspark">pyspark_xml_ingest.py</a>
+      <a href="#day3-dlt">dlt_traffic_counts.py</a>
+      <a href="#day3-notebooks">03 / 04 notebooks</a>
+      <a href="#day3-job">Day 3 job + pipeline yml</a>
+
+      <div class="group-label">Post-Day-3 fixes</div>
+      <a href="#fixup-orchestration">Job orchestration + idempotency</a>
+      <a href="#fixup-audit">Audit schema fix</a>
+      <a href="#fixup-schemas">Bronze explicit schemas</a>
+      <a href="#fixup-checkpoint">Checkpoint relocation</a>
+
+      <div class="group-label">Reference</div>
+      <a href="#dependency-map">Dependency map</a>
+      <a href="#data-flow">Data flow, end to end</a>
+      <a href="#testing-ci">Testing &amp; CI/CD</a>
+      <a href="#cheat-sheet">Trainer Q&amp;A cheat sheet</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <header class="top" id="overview">
+      <p class="eyebrow">Capstone project · Databricks Free Edition</p>
+      <h1>vstone-databricks-pipeline</h1>
+      <p>An end-to-end <b>Bronze → Silver → Gold medallion pipeline</b> built on the
+      <code>xxjcaxx/trafficsimulator</code> Kaggle dataset — simulated traffic sensor
+      data for a neighborhood in Valencia, Spain. Runs entirely on Databricks Free
+      Edition (serverless compute only, no managed clusters), governed by Unity
+      Catalog, deployed via Databricks Asset Bundles (DABs), with a GitHub Actions
+      CI/CD pipeline. Currently: <b>Bronze layer complete</b> (Days 1-3 of a 10-day
+      build), Silver/Gold not yet started.</p>
+    </header>
+
+    <section id="how-to-read">
+      <h2>How this project fits together</h2>
+      <p class="section-sub">Everything is built in layers, where each layer only depends on the layer below it — never the reverse. This is the single most important idea for explaining "how does it all connect."</p>
+
+      <div class="layer">
+        <div class="layer-label">Layer 0 — Config (data, not code)</div>
+        <div class="chips">
+          <span class="chip">databricks.yml</span>
+          <span class="chip">resources/catalog.yml</span>
+          <span class="chip">src/config/env.yml</span>
+          <span class="chip">src/config/sources.yml</span>
+          <span class="chip">src/config/schemas.py</span>
+        </div>
+      </div>
+      <div class="layer-arrow">↓ read by</div>
+      <div class="layer">
+        <div class="layer-label">Layer 1 — src/common/ (shared utilities, used by every pipeline)</div>
+        <div class="chips">
+          <span class="chip">config_loader.py</span>
+          <span class="chip">io_readers.py</span>
+          <span class="chip">audit.py</span>
+          <span class="chip">logger.py</span>
+          <span class="chip">metadata.py</span>
+          <span class="chip">sanity_checks.py</span>
+        </div>
+      </div>
+      <div class="layer-arrow">↓ used by</div>
+      <div class="layer">
+        <div class="layer-label">Layer 2 — src/pipelines/ (the actual ingestion logic, unit-testable, no notebook needed)</div>
+        <div class="chips">
+          <span class="chip">ingestion/chunking.py</span>
+          <span class="chip">bronze/copy_into.py</span>
+          <span class="chip">bronze/autoloader_ingest.py</span>
+          <span class="chip">bronze/pyspark_xml_ingest.py</span>
+          <span class="chip">bronze/dlt_traffic_counts.py</span>
+        </div>
+      </div>
+      <div class="layer-arrow">↓ called from</div>
+      <div class="layer">
+        <div class="layer-label">Layer 3 — src/notebooks/ (thin Databricks Job entrypoints — wire widgets to Layer 2 functions, no real logic)</div>
+        <div class="chips">
+          <span class="chip">00_download_raw_data.py</span>
+          <span class="chip">01_data_chunking.py</span>
+          <span class="chip">02_bronze_copy_into.py</span>
+          <span class="chip">03_bronze_autoloader.py</span>
+          <span class="chip">04_bronze_pyspark_xml.py</span>
+        </div>
+      </div>
+      <div class="layer-arrow">↓ scheduled/run by</div>
+      <div class="layer">
+        <div class="layer-label">Layer 4 — resources/ (DABs Job/Pipeline definitions — deployed infrastructure-as-code)</div>
+        <div class="chips">
+          <span class="chip">jobs/data_chunking_job.yml</span>
+          <span class="chip">jobs/bronze_copy_into_job.yml</span>
+          <span class="chip">jobs/bronze_autoloader_pyspark_dlt_job.yml</span>
+          <span class="chip">pipelines/bronze_dlt_pipeline.yml</span>
+        </div>
+      </div>
+
+      <p>A trainer question like <i>"why does chunking.py not know what catalog it's writing to?"</i> has one answer that covers the whole project: <b>nothing in Layer 2/3 ever hardcodes an environment-specific value</b> — every path, catalog name, and schema name is resolved at runtime from Layer 0/1, so the exact same code runs unmodified in dev/test/prod.</p>
+    </section>
+
+    <section id="folder-structure">
+      <h2>Folder structure</h2>
+      <div class="tree">
+<span class="d">vstone-databricks-pipeline/</span>
+├── <span class="f">databricks.yml</span>                      <span class="note"># DABs bundle: targets dev/test/prod, variables, include: list</span>
+├── <span class="f">setup.cfg</span>                           <span class="note"># flake8 config (max line length, notebook-file excludes)</span>
+├── <span class="f">README.md</span>                           <span class="note"># "how do I run this" — setup + every-day workflow</span>
+├── <span class="d">.github/workflows/</span>
+│   └── <span class="f">databricks-ci-cd.yml</span>            <span class="note"># CI: flake8 + pytest on every PR; CD: deploy to dev on push</span>
+├── <span class="d">docs/</span>
+│   ├── <span class="f">requirements_and_assumptions.md</span> <span class="note"># brief interpretation, key design decisions</span>
+│   ├── <span class="f">dataset_profiling.md</span>            <span class="note"># row counts, columns, data-quality findings per raw file</span>
+│   └── <span class="f">*.html</span>                          <span class="note"># sync runbooks for the second machine (not part of the pipeline itself)</span>
+├── <span class="d">resources/</span>                          <span class="note"># DABs resource definitions (Layer 4)</span>
+│   ├── <span class="f">catalog.yml</span>                     <span class="note"># Unity Catalog schemas + Volumes as declared infra</span>
+│   ├── <span class="d">jobs/</span>
+│   │   ├── <span class="f">data_chunking_job.yml</span>
+│   │   ├── <span class="f">bronze_copy_into_job.yml</span>
+│   │   └── <span class="f">bronze_autoloader_pyspark_dlt_job.yml</span>
+│   └── <span class="d">pipelines/</span>
+│       └── <span class="f">bronze_dlt_pipeline.yml</span>
+├── <span class="d">src/</span>
+│   ├── <span class="d">config/</span>                         <span class="note"># Layer 0</span>
+│   │   ├── <span class="f">env.yml</span>
+│   │   ├── <span class="f">sources.yml</span>
+│   │   └── <span class="f">schemas.py</span>
+│   ├── <span class="d">common/</span>                         <span class="note"># Layer 1</span>
+│   │   ├── <span class="f">config_loader.py</span>
+│   │   ├── <span class="f">io_readers.py</span>
+│   │   ├── <span class="f">audit.py</span>
+│   │   ├── <span class="f">logger.py</span>
+│   │   ├── <span class="f">metadata.py</span>
+│   │   └── <span class="f">sanity_checks.py</span>
+│   ├── <span class="d">pipelines/</span>                      <span class="note"># Layer 2</span>
+│   │   ├── <span class="d">ingestion/</span>
+│   │   │   └── <span class="f">chunking.py</span>
+│   │   └── <span class="d">bronze/</span>
+│   │       ├── <span class="f">copy_into.py</span>
+│   │       ├── <span class="f">autoloader_ingest.py</span>
+│   │       ├── <span class="f">pyspark_xml_ingest.py</span>
+│   │       └── <span class="f">dlt_traffic_counts.py</span>
+│   └── <span class="d">notebooks/</span>                      <span class="note"># Layer 3</span>
+│       ├── <span class="f">00_download_raw_data.py</span>
+│       ├── <span class="f">01_data_chunking.py</span>
+│       ├── <span class="f">02_bronze_copy_into.py</span>
+│       ├── <span class="f">03_bronze_autoloader.py</span>
+│       └── <span class="f">04_bronze_pyspark_xml.py</span>
+└── <span class="d">tests/</span>
+    ├── <span class="f">conftest.py</span>                     <span class="note"># auto-configures local Spark for pytest (JAVA_HOME, PYSPARK_PYTHON)</span>
+    └── <span class="d">unit/</span>                           <span class="note"># one test file per Layer 1/2 module, no Databricks cluster needed</span>
+      </div>
+    </section>
+
+    <!-- ============================= FOUNDATIONAL — CONFIG ============================= -->
+
+    <section id="f-databricks-yml">
+      <h2>Foundational files — Config layer</h2>
+      <p class="section-sub">These five files hold every environment-specific and dataset-specific value in the project. Nothing below this layer ever hardcodes a catalog name, schema name, file path, or column type.</p>
+
+      <div class="filecard" id="f-databricks-yml-card">
+        <div class="fc-head"><span class="tag tag-config">config</span><span class="fc-path">databricks.yml</span></div>
+        <p>The DABs bundle definition — the single file <code>databricks bundle</code> commands read to know what to deploy and where. Declares 3 <b>targets</b>: <code>dev</code> (<code>mode: development</code>, default), <code>test</code>, <code>prod</code> (both <code>mode: production</code>) — each mapped to its own Unity Catalog catalog via the <code>catalog</code> variable, since Free Edition is a single workspace (no separate dev/test/prod workspaces exist, so catalogs are the closest real separation available).</p>
+        <p><code>mode: development</code> is what makes dev's schema names auto-prefix per-user (<code>dev_&lt;user&gt;_raw</code> instead of plain <code>raw</code>) and job names get a <code>[dev &lt;user&gt;]</code> prefix — this is a DABs built-in behavior, not something this project's code does manually.</p>
+        <p>The <code>include:</code> list is what actually pulls <code>resources/*.yml</code> files into the deploy — a new job/pipeline yml file left out of this glob simply never gets deployed, silently.</p>
+      </div>
+
+      <div class="filecard" id="f-catalog-yml">
+        <div class="fc-head"><span class="tag tag-config">config</span><span class="fc-path">resources/catalog.yml</span></div>
+        <p>Declares Unity Catalog <b>schemas</b> and <b>Volumes</b> as DABs-managed infrastructure — deployed the same way as jobs (<code>databricks bundle deploy</code>), not hand-run SQL. Four schemas: <code>raw</code> (landing files), <code>bronze</code> (first Delta tables), <code>audit</code> (pipeline run logs), <code>ops</code> (streaming checkpoints — added later, see the checkpoint-relocation fix below). Two volumes: <code>raw_volume</code> (under raw) and <code>checkpoints_volume</code> (under ops).</p>
+        <p>Catalog creation itself is deliberately <b>not</b> in here — DABs' declarative <code>catalogs:</code> resource only works with a newer deployment engine this project doesn't use, so the catalog is created once by hand (one-line SQL) per environment.</p>
+        <p><b>Why 4 separate schemas, not 1:</b> raw/bronze are data layers, audit is human-queryable pipeline history, ops is opaque pipeline bookkeeping (streaming offsets) — three genuinely different concerns that shouldn't share governance/retention rules.</p>
+      </div>
+
+      <div class="filecard" id="f-env-yml">
+        <div class="fc-head"><span class="tag tag-config">config</span><span class="fc-path">src/config/env.yml</span></div>
+        <p>Per-environment values that aren't per-dataset (that's <code>sources.yml</code>'s job). One block per environment (<code>dev</code>/<code>test</code>/<code>prod</code>), each with <code>catalog</code>, <code>raw_schema</code>, <code>bronze_schema</code>, <code>audit_schema</code>, <code>ops_schema</code>.</p>
+        <p><b>Why schema names live here instead of being hardcoded "raw"/"bronze" everywhere:</b> <code>mode: development</code> auto-prefixes schema names (<code>dev_&lt;user&gt;_raw</code>) but <code>mode: production</code> doesn't (<code>test</code>/<code>prod</code> stay plain <code>raw</code>) — so the same conceptual schema has a different real name per environment. Every string field here becomes a <code>${placeholder}</code> usable in <code>sources.yml</code> automatically — adding a new per-environment field needs zero code changes, just a new key here.</p>
+      </div>
+
+      <div class="filecard" id="f-sources-yml">
+        <div class="fc-head"><span class="tag tag-config">config</span><span class="fc-path">src/config/sources.yml</span></div>
+        <p>Every ingestable dataset in the project, described once: <code>path</code>, <code>format</code>, <code>technique</code>, <code>target_table</code>, <code>description</code>. Notebooks never hardcode a path — they call <code>get_source_config("&lt;key&gt;")</code> and everything is driven from here. Adding a new source is a config edit, not a code change.</p>
+        <p><b>Two kinds of entries:</b></p>
+        <ul>
+          <li><b>Full entries</b> (<code>raw_cars</code>, <code>chunk1_csv</code>...<code>chunk4_xml</code>) — define their own path/format directly.</li>
+          <li><b>Indirection entries</b> (<code>bronze_streets</code>, <code>bronze_node_locations</code>, <code>bronze_streets_list</code>, <code>bronze_telegram</code>) — set <code>source_key: raw_streets</code> etc. to reuse another entry's path/format/description, only overriding <code>technique</code>/<code>target_table</code>. This exists because the 4 un-chunked raw files (<code>streets.csv</code> etc.) get ingested into Bronze under a <i>different</i> table name than their raw landing entry — same file, two roles.</li>
+        </ul>
+        <p><code>has_audit_columns: true</code> on the 4 chunk entries flags that <code>chunking.py</code> already stamped audit columns onto these files at Day 1 extraction time — Bronze's own load has to strip and re-tag them (see <code>copy_into.py</code> below), not collide with them.</p>
+      </div>
+
+      <div class="filecard" id="f-schemas-py">
+        <div class="fc-head"><span class="tag tag-config">config</span><span class="fc-path">src/config/schemas.py</span></div>
+        <p>One explicit <code>pyspark.sql.types.StructType</code> per source key, added after Day 3 to replace every <code>inferSchema</code> usage in the project. <b>Every field is deliberately <code>StringType</code></b> — this isn't an oversight, it's Databricks' own documented medallion-architecture recommendation: Bronze stays loosely typed (string) so an unexpected value in the source file never breaks raw ingestion; strict typing (<code>IntegerType</code>, <code>TimestampType</code>) and schema-equality validation belong to the Silver layer, not built yet.</p>
+        <p>Column <b>order</b> matters for the 4 CSV schemas (CSV schema application is positional) — every order here was verified directly against the real file headers on the Volume, not just copied from the profiling doc (which, for <code>cars.csv</code> specifically, listed a different order than the actual file uses).</p>
+        <div class="fn"><span class="fn-sig">CARS_SCHEMA, STREETS_SCHEMA, NODE_LOCATIONS_SCHEMA, STREETS_LIST_SCHEMA, TELEGRAM_SCHEMA</span>
+        <p>Five StructTypes. <code>CARS_SCHEMA</code> is reused for <b>all 4 chunks</b> (<code>chunk1_csv</code>..<code>chunk4_xml</code>) plus <code>raw_cars</code> — same 5 source columns (<code>enter</code>,<code>exit</code>,<code>date</code>,<code>id</code>,<code>location</code>) regardless of on-disk format (CSV/JSON/XML). Only <code>node_locations.location</code> and <code>streets_list.street_id</code> are <code>nullable=False</code> — the two genuine primary keys among all 9 sources.</p></div>
+        <div class="fn"><span class="fn-sig">SCHEMAS: Dict[str, StructType]</span>
+        <p>The lookup table keyed by source_key — consumed by <code>config_loader.get_source_schema()</code>, never imported directly by pipeline code.</p></div>
+      </div>
+    </section>
+
+    <!-- ============================= FOUNDATIONAL — COMMON ============================= -->
+
+    <section id="f-config-loader">
+      <h2>Foundational files — src/common/ (shared utilities)</h2>
+      <p class="section-sub">Every pipeline module in Layer 2 imports from here. This is the layer that turns Layer 0's static config into something Python code can actually call.</p>
+
+      <div class="filecard">
+        <div class="fc-head"><span class="tag tag-common">common</span><span class="fc-path">src/common/config_loader.py</span></div>
+        <p>Loads <code>env.yml</code> and <code>sources.yml</code>, resolves <code>${placeholder}</code> substitution, and resolves the <code>source_key</code> indirection. This is the one file every other Layer 1/2 module imports from.</p>
+        <div class="deps"><b>Depends on:</b> <code>src/config/env.yml</code>, <code>src/config/sources.yml</code>, <code>src/config/schemas.py</code> (local import inside <code>get_source_schema</code>)</div>
+        <div class="fn"><span class="fn-sig">get_env_config(env: str | None = None) -&gt; dict</span>
+        <p>Returns the active environment's block from <code>env.yml</code>. If <code>env</code> is omitted, falls back to the <code>DATABRICKS_BUNDLE_TARGET</code> env var (set automatically when a job runs via DABs), then <code>"dev"</code>.</p></div>
+        <div class="fn"><span class="fn-sig">get_source_config(key: str, env=None) -&gt; dict</span>
+        <p>The main entrypoint every pipeline calls. Resolves <code>source_key</code> indirection (merges the referenced entry's fields in first, so the alias's own fields win), then substitutes every <code>${...}</code> placeholder using the active env block. Returns one flat dict — callers never see the indirection or the placeholders.</p></div>
+        <div class="fn"><span class="fn-sig">get_source_schema(source_key: str) -&gt; StructType</span>
+        <p>Same indirection resolution as <code>get_source_config</code>, but looks up <code>config/schemas.py</code>'s <code>SCHEMAS</code> dict instead. Added post-Day-3 alongside <code>schemas.py</code>.</p></div>
+        <div class="fn"><span class="fn-sig">_substitute(value, replacements) -&gt; Any</span>
+        <p>Generic recursive <code>${key}</code> replacer — works on strings, dicts, and lists, so any new per-environment field added to <code>env.yml</code> is automatically usable in <code>sources.yml</code> with zero code changes here.</p></div>
+      </div>
+
+      <div class="filecard" id="f-io-readers">
+        <div class="fc-head"><span class="tag tag-common">common</span><span class="fc-path">src/common/io_readers.py</span></div>
+        <p>Strategy-pattern dispatch: "read/write this source, regardless of format." A registry (<code>READERS</code>/<code>WRITERS</code> dicts keyed by <code>"csv"</code>/<code>"json"</code>/<code>"xml"</code>) means adding Parquet later is one function + one registry entry, nothing else in the repo changes.</p>
+        <div class="fn"><span class="fn-sig">read_csv/read_json/read_xml(spark, path, schema=None, **options)</span>
+        <p>If <code>schema</code> is given, applies <code>.schema(schema)</code>. If not, <code>read_csv</code> falls back to <code>inferSchema=true</code> (kept only for hypothetical ad hoc use — every real caller in this project always passes an explicit schema now).</p></div>
+        <div class="fn"><span class="fn-sig">read_source(spark, source_config, schema=None, **options)</span> / <span class="fn-sig">write_source(df, source_config, mode="overwrite", **options)</span>
+        <p>The two functions pipeline code actually calls — look up <code>source_config["format"]</code> in the registry and dispatch. <code>chunking.py</code> is the main caller of both.</p></div>
+      </div>
+
+      <div class="filecard" id="f-audit">
+        <div class="fc-head"><span class="tag tag-common">common</span><span class="fc-path">src/common/audit.py</span></div>
+        <p>One function, used identically in Bronze/Silver/Gold (Silver/Gold not built yet, but the contract already holds).</p>
+        <div class="fn"><span class="fn-sig">add_audit_columns(df, source_format, source_file) -&gt; DataFrame</span>
+        <p>Adds 4 columns: <code>load_dt</code> (real <code>TimestampType</code>, <code>current_timestamp()</code>), <code>source_format</code>, <code>source_file</code>, <code>run_id</code> (from <code>logger.current_run_id()</code> — ties every row back to the pipeline run that wrote it). These 4 are the only columns in the whole project that are <i>not</i> plain <code>StringType</code>, since they're pipeline-generated metadata, not inferred/typed-from-source data.</p></div>
+      </div>
+
+      <div class="filecard" id="f-logger">
+        <div class="fc-head"><span class="tag tag-common">common</span><span class="fc-path">src/common/logger.py</span></div>
+        <p>Every module gets its logger the same way: <code>get_logger(__name__, catalog=..., job_name=...)</code>. Two things happen per call: (1) a standard Python logger prints to stdout — visible in the Databricks job run UI automatically, and (2) the same event best-effort appends to <code>&lt;catalog&gt;.&lt;audit_schema&gt;.pipeline_logs</code>, a real Delta table backing the "Audit &amp; Observability Layer."</p>
+        <div class="fn"><span class="fn-sig">get_logger(name, catalog=None, job_name=..., write_to_delta=True, spark=None)</span>
+        <p>Idempotent — safe to call repeatedly without duplicating handlers. Attaches a <code>_DeltaAuditHandler</code> when <code>catalog</code> is given.</p></div>
+        <div class="fn"><span class="fn-sig">_DeltaAuditHandler._resolve_table(catalog) -&gt; str</span>
+        <p>Resolves <code>&lt;catalog&gt;.&lt;audit_schema&gt;.pipeline_logs</code> via <code>config_loader.get_env_config()</code> — <b>not</b> a hardcoded literal <code>"audit"</code>. This was a real bug found and fixed post-Day-3: the schema is auto-prefixed under <code>mode: development</code> just like raw/bronze, so a hardcoded name silently failed to write anything in dev the whole time (best-effort design meant it never crashed, just quietly no-op'd).</p></div>
+        <div class="fn"><span class="fn-sig">_DeltaAuditHandler.emit(record)</span>
+        <p>Never raises — any write failure disables itself for the rest of the run and logs once at DEBUG. Deliberate: a logging call must never be what breaks a pipeline.</p></div>
+        <div class="fn"><span class="fn-sig">current_run_id() -&gt; str</span>
+        <p>One UUID per process, shared by every logger instance in that run — this is what <code>audit.add_audit_columns</code> tags every row with.</p></div>
+      </div>
+
+      <div class="filecard" id="f-metadata">
+        <div class="fc-head"><span class="tag tag-common">common</span><span class="fc-path">src/common/metadata.py</span></div>
+        <div class="fn"><span class="fn-sig">apply_table_comments(spark, table, table_comment, column_comments=None)</span>
+        <p>Config-driven <code>COMMENT ON TABLE</code>/<code>COMMENT ON COLUMN</code> — pulls the comment straight from <code>sources.yml</code>'s <code>description</code> field, so there's one place to describe a dataset, not two. Called at the end of every Bronze notebook.</p></div>
+      </div>
+
+      <div class="filecard" id="f-sanity-checks">
+        <div class="fc-head"><span class="tag tag-common">common</span><span class="fc-path">src/common/sanity_checks.py</span></div>
+        <div class="fn"><span class="fn-sig">run_sanity_check(spark, table, catalog, job_name) -&gt; dict</span>
+        <p>The brief's "sanity check per ingestion" requirement, as one reusable function. Fails if <code>row_count == 0</code> <i>or</i> if any present audit column is fully null (catches a silent all-NULL audit stamp, not just an empty load). Every Bronze notebook raises <code>RuntimeError</code> if this fails — which is why "job succeeded" already implies "row_count &gt; 0" without needing a separate count check.</p></div>
+      </div>
+    </section>
+
+    <!-- ============================= DAY 1 ============================= -->
+
+    <section id="day1-chunking">
+      <div class="callout day1"><b>Day 1 — Data Chunking.</b> Splits <code>cars.csv</code> (24.6M rows) into 4 chronological slices, each destined for a different Bronze ingestion technique. This is the only place raw data gets transformed before Bronze.</div>
+
+      <div class="filecard">
+        <div class="fc-head"><span class="tag tag-pipeline">pipeline</span><span class="fc-path">src/pipelines/ingestion/chunking.py</span></div>
+        <p>All real chunking logic — unit-testable without a running job (see <code>test_chunking.py</code>).</p>
+        <div class="deps"><b>Depends on:</b> <code>audit.add_audit_columns</code>, <code>config_loader.get_source_config/get_source_schema</code>, <code>io_readers.read_source/write_source</code>, <code>logger.get_logger/current_run_id</code></div>
+        <div class="fn"><span class="fn-sig">CHUNK_PLAN = [(40,"chunk1_csv"), (30,"chunk2_csv"), (20,"chunk3_json"), (10,"chunk4_xml")]</span>
+        <p>Chronological, not equal, split — earliest 40% first. Mirrors a real pipeline's growth pattern (one big historical backfill, then progressively smaller incremental drops) and lets each Bronze technique map to the batch size it suits (COPY INTO for bulk, Auto Loader/DLT for smaller incremental, PySpark for the riskiest/smallest write path).</p></div>
+        <div class="fn"><span class="fn-sig">run(spark, env="dev", force=False) -&gt; dict[chunk_key, row_count]</span>
+        <p>Reads <code>raw_cars</code> with its explicit schema, sorts by <code>date</code> (source row order isn't guaranteed chronological), assigns a monotonic <code>row_number()</code>, and slices by cumulative percentage. Each slice gets audit columns stamped, then written in its target format (chunk1/2 stay CSV, chunk3 becomes JSON, chunk4 becomes XML).</p>
+        <p><b>Idempotency, two layers:</b> (1) every write is <code>mode="overwrite"</code> on a fixed path, so a naive re-run replaces rather than duplicates; (2) on top of that, <code>force=False</code> skips the entire expensive sort/write if a completion marker says it's already done — re-deriving just the existing row counts instead of resorting 24.6M rows.</p></div>
+        <div class="fn"><span class="fn-sig">chunking_already_complete(env) / mark_chunking_complete(env)</span>
+        <p>Checks/writes a <code>_chunking_complete</code> marker file, not bare chunk-file existence — a run that crashed partway through writing would leave a partial file that looks "done" to an existence check, silently leaving bad data in place. The marker is only written after all 4 chunks succeed.</p></div>
+      </div>
+
+      <div class="filecard" id="day1-notebooks">
+        <div class="fc-head"><span class="tag tag-notebook">notebook</span><span class="fc-path">src/notebooks/00_download_raw_data.py</span></div>
+        <p>Downloads all 5 raw files from Kaggle <b>directly into the Volume</b> — no laptop involved, no 5GB Catalog Explorer upload limit (that cap is a UI restriction, not a Volume storage limit). <code>force=false</code> by default skips files already present. <code>schema</code> is resolved via <code>config_loader.get_env_config(env)["raw_schema"]</code>, not a hardcoded widget default.</p>
+      </div>
+      <div class="filecard">
+        <div class="fc-head"><span class="tag tag-notebook">notebook</span><span class="fc-path">src/notebooks/01_data_chunking.py</span></div>
+        <p>Thin entrypoint — reads the <code>catalog</code>/<code>env</code>/<code>force</code> widgets, calls <code>chunking.run(spark, env=env, force=force)</code>, prints a sanity-check summary. No real logic lives here.</p>
+      </div>
+
+      <div class="filecard" id="day1-job">
+        <div class="fc-head"><span class="tag tag-resource">resource</span><span class="fc-path">resources/jobs/data_chunking_job.yml</span></div>
+        <p>The <b>"Data Chunking"</b> DABs job — display name kept exactly that literal string (brief requirement) even though it now runs two tasks: <code>download_raw_data</code> → <code>chunk_cars_csv</code> (real <code>depends_on</code> orchestration, added post-Day-3 — see the fix-up section below). No cluster spec on either task = serverless by default, required on Free Edition.</p>
+      </div>
+    </section>
+
+    <!-- ============================= DAY 2 ============================= -->
+
+    <section id="day2-copyinto">
+      <div class="callout day2"><b>Day 2 — Bronze COPY INTO.</b> Bulk-loads <code>chunk1_csv</code> plus the 4 un-chunked raw files into 5 separate Bronze tables — one table per source, not a shared table (Bronze's grain is one-technique-per-table).</div>
+
+      <div class="filecard">
+        <div class="fc-head"><span class="tag tag-pipeline">pipeline</span><span class="fc-path">src/pipelines/bronze/copy_into.py</span></div>
+        <p>One generic loader reused for all 5 COPY INTO sources — only <code>source_key</code> differs per call.</p>
+        <div class="deps"><b>Depends on:</b> <code>config_loader.get_source_config/get_source_schema</code>, <code>logger.current_run_id</code></div>
+        <div class="fn"><span class="fn-sig">build_create_table_sql(cfg, source_key) -&gt; str</span>
+        <p>COPY INTO requires its target table to already exist (confirmed against a real warehouse — <code>DELTA_MISSING_DELTA_TABLE_COPY_INTO</code> otherwise). Builds an explicit <code>CREATE TABLE IF NOT EXISTS (col STRING, ..., load_dt TIMESTAMP, ...)</code> from the source's schema — <b>not</b> a CTAS over inferred <code>read_files()</code> (that was the pre-fix version; see the explicit-schemas section).</p></div>
+        <div class="fn"><span class="fn-sig">build_copy_into_sql(cfg, run_id) -&gt; str</span>
+        <p>The actual <code>COPY INTO ... SELECT ... FROM '&lt;path&gt;'</code> statement. <code>_select_clause()</code> picks <code>*</code> for raw files but <code>* EXCEPT (load_dt, source_format, source_file, run_id)</code> for the 4 chunks — since those already carry audit columns from Day 1's extraction, and a plain <code>SELECT *</code> would collide (<code>COLUMN_ALREADY_EXISTS</code>).</p></div>
+        <div class="fn"><span class="fn-sig">run_copy_into(spark, source_key, env="dev") -&gt; dict</span>
+        <p>Runs the create-table SQL, then the COPY INTO. COPY INTO tracks which source files it's already loaded internally (in the target table's own transaction log) — re-running against the same file is naturally idempotent, no separate checkpoint needed for this technique.</p></div>
+      </div>
+
+      <div class="filecard" id="day2-notebook">
+        <div class="fc-head"><span class="tag tag-notebook">notebook</span><span class="fc-path">src/notebooks/02_bronze_copy_into.py</span></div>
+        <p>One shared notebook, run 5 times by the job below with a different <code>source_key</code> widget each time. Calls <code>run_copy_into</code>, then <code>metadata.apply_table_comments</code>, then <code>sanity_checks.run_sanity_check</code> (raises if it fails).</p>
+      </div>
+
+      <div class="filecard" id="day2-job">
+        <div class="fc-head"><span class="tag tag-resource">resource</span><span class="fc-path">resources/jobs/bronze_copy_into_job.yml</span></div>
+        <p><b>"Bronze COPY INTO"</b> job — 5 independent tasks (<code>copy_into_chunk1_csv</code>, <code>_streets</code>, <code>_node_locations</code>, <code>_streets_list</code>, <code>_telegram</code>), no <code>depends_on</code> between them since the 5 sources are fully independent — they run in parallel.</p>
+      </div>
+    </section>
+
+    <!-- ============================= DAY 3 ============================= -->
+
+    <section id="day3-autoloader">
+      <div class="callout day3"><b>Day 3 — Auto Loader, PySpark read/write, and Delta Live Tables.</b> The remaining 3 chunks, one per remaining required ingestion technique.</div>
+
+      <div class="filecard">
+        <div class="fc-head"><span class="tag tag-pipeline">pipeline</span><span class="fc-path">src/pipelines/bronze/autoloader_ingest.py</span></div>
+        <p>Auto Loader (<code>cloudFiles</code>) ingestion for <code>chunk3_json</code>. Structured Streaming under the hood, even though it's used here as a one-shot batch trigger.</p>
+        <div class="deps"><b>Depends on:</b> <code>audit.add_audit_columns</code>, <code>config_loader.get_env_config/get_source_config/get_source_schema</code></div>
+        <div class="fn"><span class="fn-sig">checkpoint_path(cfg, env) / schema_location(cfg, env)</span>
+        <p>Two <b>separate</b> paths under <code>/Volumes/&lt;catalog&gt;/&lt;ops_schema&gt;/checkpoints_volume/&lt;table&gt;/{checkpoint,schema}</code> — added post-Day-3. Originally these were nested under <code>raw_volume</code> and shared one path; both were fixed (see below).</p></div>
+        <div class="fn"><span class="fn-sig">run_autoloader(spark, source_key, env="dev") -&gt; dict</span>
+        <p>Loads <code>.load(cfg["path"])</code> — the <b>exact file path</b>, not the shared <code>chunks/</code> directory + a glob filter. An earlier attempt used <code>cloudFiles.pathGlobFilter</code>, which got case-folded server-side into an unrecognized option key on this runtime (<code>CF_UNKNOWN_OPTION_KEYS_ERROR</code>); the exact-path approach sidesteps that entirely. Streams with <code>trigger(availableNow=True)</code> (process what's there, then stop — not a long-running stream) into the target table.</p>
+        <p><b>Idempotency:</b> the checkpoint's offset log remembers which files were already processed — re-running is naturally a no-op for files already loaded, via a different mechanism than COPY INTO's (streaming checkpoint vs. transaction-log file-tracking).</p></div>
+      </div>
+
+      <div class="filecard" id="day3-pyspark">
+        <div class="fc-head"><span class="tag tag-pipeline">pipeline</span><span class="fc-path">src/pipelines/bronze/pyspark_xml_ingest.py</span></div>
+        <p>Plain PySpark read/write for <code>chunk4_xml</code> — the only Bronze technique with <b>no built-in rerun-safety</b> of its own.</p>
+        <div class="fn"><span class="fn-sig">sanitize_column_name(name) -&gt; str</span>
+        <p>Replaces anything that isn't alphanumeric/underscore with <code>_</code> — XML tag/attribute names can contain characters (spaces, <code>-</code>, <code>:</code>) that aren't valid Delta/Parquet column names.</p></div>
+        <div class="fn"><span class="fn-sig">run_pyspark_xml(spark, source_key, env="dev") -&gt; dict</span>
+        <p>Reads via <code>io_readers.read_xml</code> (spark-xml package) with the explicit schema, sanitizes column names, writes with <code>mode="overwrite"</code> — the explicit fix for the missing rerun-safety: the whole file is rewritten wholesale every run, not incrementally, so there's no "new rows since last run" concept a keyed MERGE would need.</p></div>
+      </div>
+
+      <div class="filecard" id="day3-dlt">
+        <div class="fc-head"><span class="tag tag-pipeline">pipeline</span><span class="fc-path">src/pipelines/bronze/dlt_traffic_counts.py</span></div>
+        <p>Delta Live Tables definition for <code>chunk2_csv</code>. Structurally different from the other 3 — it's a <b><code>@dlt.table</code>-decorated function</b>, not a plain callable, and runs inside a managed DLT pipeline, not a notebook task directly. Excluded from flake8 individually (<code>setup.cfg</code>) since it uses the same injected-globals pattern (<code>spark</code>) as notebooks despite living under <code>src/pipelines/</code>.</p>
+        <div class="fn"><span class="fn-sig">@dlt.table(name="traffic_counts_dlt", comment=...) @dlt.expect(...) def traffic_counts_dlt()</span>
+        <p>Reads <code>chunk2_csv</code> with its explicit schema, re-tags audit columns, returns the DataFrame — DLT handles the actual materialization. Uses <code>@dlt.expect</code> for data-quality checks (DLT's own native mechanism) rather than <code>sanity_checks.run_sanity_check</code>, deliberately — bolting an imperative check onto a declarative function would fight the framework instead of using its own DQ tooling. Catalog/target schema come from the pipeline resource yml, not this file — DLT tables are declared with their bare name only.</p></div>
+      </div>
+
+      <div class="filecard" id="day3-notebooks">
+        <div class="fc-head"><span class="tag tag-notebook">notebook</span><span class="fc-path">src/notebooks/03_bronze_autoloader.py &amp; 04_bronze_pyspark_xml.py</span></div>
+        <p>Same thin-entrypoint pattern as <code>02_bronze_copy_into.py</code> — read widgets, call the Layer 2 function, apply table comments, run the sanity check.</p>
+      </div>
+
+      <div class="filecard" id="day3-job">
+        <div class="fc-head"><span class="tag tag-resource">resource</span><span class="fc-path">resources/jobs/bronze_autoloader_pyspark_dlt_job.yml + resources/pipelines/bronze_dlt_pipeline.yml</span></div>
+        <p><b>"Bronze Auto Loader / PySpark / DLT Ingestion"</b> job — 3 tasks: <code>autoloader_chunk3_json</code>, <code>pyspark_chunk4_xml</code> (both plain <code>notebook_task</code>s), and <code>dlt_chunk2_csv</code> (a <code>pipeline_task</code> that triggers the separate DLT pipeline resource by <code>pipeline_id</code>).</p>
+        <p>The DLT pipeline's <code>target</code> uses <code>${resources.schemas.bronze_schema.name}</code> — a DABs cross-resource reference, <b>not</b> a literal <code>"bronze"</code> string. This matters because <code>env.yml</code>'s <code>bronze_schema</code> field is only visible to Python code via <code>config_loader</code>, never to DABs' own YAML templating — a literal here would silently write DLT's tables into a schema that doesn't exist in dev (since dev's real schema name is prefixed).</p>
+      </div>
+    </section>
+
+    <!-- ============================= FIX-UPS ============================= -->
+
+    <section id="fixup-orchestration">
+      <div class="callout fixup"><b>Post-Day-3 fix-ups.</b> Three follow-on changes made after the Bronze layer was functionally complete — deliberate design upgrades, not bug fixes for broken code (except the audit-schema one, which was a real latent bug).</div>
+
+      <div class="filecard">
+        <div class="fc-head"><span class="tag tag-pipeline">fix-up</span><span class="fc-path">Job orchestration + skip-based idempotency</span></div>
+        <p>Before this: the download notebook had to be run manually before <code>data_chunking_job</code> had anything to chunk. After: <code>data_chunking_job.yml</code> gained a <code>download_raw_data</code> task with <code>chunk_cars_csv</code> depending on it — one job, two tasks, the whole Day 1 pipeline runs unattended from nothing.</p>
+        <p>Also added: <code>chunking.py</code>'s <code>force</code> parameter and completion-marker skip-check (see Day 1 section above) — re-running with nothing changed no longer re-sorts 24.6M rows just to rewrite the same output.</p>
+      </div>
+
+      <div class="filecard" id="fixup-audit">
+        <div class="fc-head"><span class="tag tag-fixup">bug fix</span><span class="fc-path">Audit schema resolution</span></div>
+        <p><code>logger.py</code>'s <code>_DeltaAuditHandler</code> hardcoded the audit table as <code>&lt;catalog&gt;.audit.pipeline_logs</code> — a literal <code>"audit"</code>. Since <code>mode: development</code> auto-prefixes schema names (real dev schema: <code>dev_&lt;user&gt;_audit</code>), every audit log write in dev had been silently failing since Day 1 (best-effort design meant it never crashed anything, just quietly wrote nothing). Fixed by resolving <code>audit_schema</code> through <code>config_loader.get_env_config()</code>, matching how <code>raw_schema</code>/<code>bronze_schema</code> already worked everywhere else. Confirmed fixed live — <code>pipeline_logs</code> now actually has rows.</p>
+      </div>
+
+      <div class="filecard" id="fixup-schemas">
+        <div class="fc-head"><span class="tag tag-fixup">design upgrade</span><span class="fc-path">Bronze explicit (string-typed) schemas</span></div>
+        <p>Every implicit-schema read across the whole Bronze layer — <code>inferSchema</code> in <code>io_readers.py</code>, COPY INTO's inferred CTAS, Auto Loader's un-schema'd <code>.load()</code>, spark-xml's sampling, DLT's <code>inferSchema=true</code> — replaced with one explicit, permissive schema per source (<code>schemas.py</code>). This is Databricks' own documented recommendation, not an invented convention: Bronze stays string-typed on purpose so a bad value never breaks ingestion; strict typing is Silver's job.</p>
+        <p><b>A gotcha this surfaced:</b> the 8 Bronze tables already existed with the <i>old</i> inferred types (e.g. <code>enter INT</code>) — <code>CREATE TABLE IF NOT EXISTS</code> is a no-op against an existing table, so all 8 had to be dropped and recreated for the fix to actually take effect. Verified live via <code>DESCRIBE TABLE</code> afterward: every source column is now <code>STRING</code>, audit columns keep their own correct types.</p>
+      </div>
+
+      <div class="filecard" id="fixup-checkpoint">
+        <div class="fc-head"><span class="tag tag-fixup">design upgrade</span><span class="fc-path">Auto Loader checkpoint relocation</span></div>
+        <p>The checkpoint originally lived inside <code>raw_volume</code> (the same Volume as the raw landing data) — a conceptual mismatch: a streaming checkpoint is pipeline operational state, not data, and shouldn't live in the same zone whose whole job is holding untouched source files. Fixed by adding a dedicated <code>ops</code> schema + <code>checkpoints_volume</code> (see <code>catalog.yml</code> above), and rewriting <code>checkpoint_path()</code>/<code>schema_location()</code> to point there instead, keyed by target table name.</p>
+        <p><b>A second, independent bug found via Databricks' own docs while researching this:</b> <code>checkpointLocation</code> and <code>cloudFiles.schemaLocation</code> were sharing the exact same path — Databricks explicitly documents this as a mistake (you can't clear schema-evolution state without also discarding the checkpoint's exactly-once processing history). Now two separate subpaths.</p>
+        <p>Relocating the checkpoint makes Auto Loader treat <code>chunk3.json</code> as unprocessed again (fresh checkpoint = fresh stream state), so the target table had to be dropped first to avoid duplicate-appending the same data.</p>
+      </div>
+    </section>
+
+    <!-- ============================= DEPENDENCY MAP ============================= -->
+
+    <section id="dependency-map">
+      <h2>Dependency map — who imports whom</h2>
+      <p class="section-sub">Read top-to-bottom: every arrow means "imports from" / "reads config from." Nothing at the bottom ever imports from the top.</p>
+      <div class="tree">
+<span class="f">chunking.py</span>            → audit, config_loader, io_readers, logger
+<span class="f">copy_into.py</span>           → config_loader, logger
+<span class="f">autoloader_ingest.py</span>   → audit, config_loader
+<span class="f">pyspark_xml_ingest.py</span>  → audit, config_loader, io_readers
+<span class="f">dlt_traffic_counts.py</span>  → audit, config_loader, dlt (external)
+
+<span class="f">config_loader.py</span>      → schemas.py (local import inside get_source_schema)
+<span class="f">audit.py</span>              → logger.py (current_run_id)
+<span class="f">logger.py</span>             → config_loader.py (local import inside _resolve_table)
+<span class="f">io_readers.py</span>         → (no internal deps -- pure pyspark wrapper)
+<span class="f">metadata.py</span>           → (no internal deps -- pure SQL string builder)
+<span class="f">sanity_checks.py</span>      → logger.py
+
+<span class="note"># Notebooks (Layer 3) import from pipelines/ and common/ directly -- never
+# from each other, and pipelines/ never imports from notebooks/ or resources/.</span>
+      </div>
+      <p>Notice <code>audit.py</code> → <code>logger.py</code> and <code>logger.py</code> → <code>config_loader.py</code> is a one-way chain, not a cycle — <code>config_loader.py</code> never imports <code>logger.py</code> back. That's what keeps the whole dependency graph a clean DAG instead of a tangle.</p>
+    </section>
+
+    <!-- ============================= DATA FLOW ============================= -->
+
+    <section id="data-flow">
+      <h2>Data flow, end to end</h2>
+      <div class="flow">
+        <div class="flow-row">
+          <div class="flow-box"><b>Kaggle</b><span>xxjcaxx/trafficsimulator, 5 files</span></div>
+        </div>
+        <div class="flow-arrow">↓ 00_download_raw_data.py</div>
+        <div class="flow-row">
+          <div class="flow-box"><b>raw_volume/incoming/</b><span>cars.csv, streets.csv, node_locations.csv, streets_list.csv, telegram.csv</span></div>
+        </div>
+        <div class="flow-arrow">↓ 01_data_chunking.py → chunking.run()</div>
+        <div class="flow-row">
+          <div class="flow-box"><b>raw_volume/chunks/</b><span>chunk1.csv (40%), chunk2.csv (30%), chunk3.json (20%), chunk4.xml (10%) -- chronological slices of cars.csv</span></div>
+        </div>
+        <div class="flow-arrow">↓ 4 different Bronze techniques, in parallel</div>
+        <div class="flow-row">
+          <div class="flow-box"><b>traffic_counts_copyinto</b><span>chunk1_csv via COPY INTO</span></div>
+          <div class="flow-box"><b>traffic_counts_dlt</b><span>chunk2_csv via DLT</span></div>
+          <div class="flow-box"><b>traffic_counts_autoloader</b><span>chunk3_json via Auto Loader</span></div>
+          <div class="flow-box"><b>traffic_counts_pyspark</b><span>chunk4_xml via plain PySpark</span></div>
+        </div>
+        <div class="flow-arrow">↓ the 4 un-chunked raw files, via COPY INTO directly</div>
+        <div class="flow-row">
+          <div class="flow-box"><b>street_conditions</b><span>streets.csv (7.8GB, held whole for Day 7 benchmark)</span></div>
+          <div class="flow-box"><b>node_locations</b><span>node_locations.csv</span></div>
+          <div class="flow-box"><b>streets_list</b><span>streets_list.csv</span></div>
+          <div class="flow-box"><b>telegram</b><span>telegram.csv</span></div>
+        </div>
+        <div class="flow-arrow">↓ not built yet</div>
+        <div class="flow-row">
+          <div class="flow-box" style="opacity:.5"><b>Silver</b><span>strict typing, dedup, quarantine (node_locations bad coords), telegram date parsing</span></div>
+        </div>
+        <div class="flow-arrow" style="opacity:.5">↓</div>
+        <div class="flow-row">
+          <div class="flow-box" style="opacity:.5"><b>Gold</b><span>Fact_Traffic_Counts + Fact_Street_Conditions, bridged via Dim_Date</span></div>
+        </div>
+      </div>
+      <p>All 8 Bronze tables land in one <code>bronze</code> schema — 4 chunk-derived + 4 raw-derived, each table representing exactly one (source, technique) pair. This one-table-per-technique grain is deliberate: reconciling the 4 chunks back into a single logical stream is Silver's job, not something to force at Bronze.</p>
+    </section>
+
+    <!-- ============================= TESTING & CI ============================= -->
+
+    <section id="testing-ci">
+      <h2>Testing &amp; CI/CD</h2>
+      <table class="qa">
+        <tr><th>File</th><th>What it covers</th></tr>
+        <tr><td><code>test_audit.py</code></td><td>Schema/values of <code>add_audit_columns</code> via <code>assertSchemaEqual</code>/<code>assertDataFrameEqual</code></td></tr>
+        <tr><td><code>test_chunking.py</code></td><td>Split percentages, chronological correctness, overwrite-idempotency, skip-check marker logic, force-bypass</td></tr>
+        <tr><td><code>test_copy_into.py</code></td><td>Generated SQL strings (create-table DDL, COPY INTO), source_key indirection, per-environment schema resolution</td></tr>
+        <tr><td><code>test_autoloader_ingest.py</code></td><td>Checkpoint/schema-location path construction (not the live streaming call itself — cloudFiles needs a real cluster)</td></tr>
+        <tr><td><code>test_pyspark_xml_ingest.py</code></td><td>Column-name sanitizing (not a live XML read — spark-xml needs a package unavailable locally)</td></tr>
+        <tr><td><code>test_io_readers.py</code></td><td>Real local Spark reads proving an explicit schema actually produces string-typed columns (CSV + JSON)</td></tr>
+        <tr><td><code>test_schemas.py</code></td><td>Every declared schema is entirely string-typed, correct column order, source_key indirection, nullable-PK rules</td></tr>
+        <tr><td><code>test_logger.py</code></td><td>Audit table name resolves to the per-environment prefixed schema, not the hardcoded literal</td></tr>
+      </table>
+      <p><code>tests/conftest.py</code> auto-configures <code>PYSPARK_PYTHON</code>/<code>JAVA_HOME</code> before any test runs — no manual per-shell setup needed, so <code>pytest tests/unit -v</code> just works.</p>
+      <p><code>.github/workflows/databricks-ci-cd.yml</code>: on every PR to <code>dev</code>/<code>main</code>, runs <code>flake8 src tests --max-line-length=120</code> then <code>pytest tests/unit -v</code>. On every push to <code>dev</code> (i.e. a merged PR), a second job (<code>deploy-dev</code>) runs <code>databricks bundle deploy -t dev</code> automatically — <b>if</b> the repo has <code>DATABRICKS_HOST</code>/<code>DATABRICKS_TOKEN</code> secrets configured. This only redeploys resource definitions; it never runs the jobs or verifies data, which is why every Bronze change in this project was manually deployed + run + verified against the real workspace before merging, not just left to CI.</p>
+    </section>
+
+    <!-- ============================= CHEAT SHEET ============================= -->
+
+    <section id="cheat-sheet">
+      <h2>Trainer Q&amp;A cheat sheet</h2>
+      <table class="qa">
+        <tr><th>If asked...</th><th>Answer</th></tr>
+        <tr><td>"Why 4 different ingestion techniques for one file?"</td><td>The brief requires demonstrating COPY INTO, Auto Loader, DLT, and plain PySpark read/write. <code>cars.csv</code> was chunked chronologically (40/30/20/10) so each technique gets a differently-sized, differently-formatted slice, mapped to the batch size it suits best.</td></tr>
+        <tr><td>"Why is everything StringType at Bronze?"</td><td>Deliberate, per Databricks' own medallion guidance — Bronze must never break on an unexpected raw value. Strict typing is Silver's explicit responsibility, not done yet.</td></tr>
+        <tr><td>"How does a notebook know which catalog/schema to write to?"</td><td>It never hardcodes one — every notebook reads a <code>catalog</code>/<code>env</code> widget, passes it to <code>config_loader.get_source_config()</code>, which resolves <code>${catalog}</code>/<code>${raw_schema}</code>/etc. from <code>env.yml</code>'s block matching that environment.</td></tr>
+        <tr><td>"What makes each pipeline idempotent?"</td><td>A different mechanism per technique: COPY INTO tracks loaded files in the target table's transaction log; Auto Loader tracks them in its streaming checkpoint; plain PySpark uses <code>mode="overwrite"</code> since it has no built-in tracking at all; chunking.py adds a completion-marker skip-check on top of overwrite-safety.</td></tr>
+        <tr><td>"Why are notebooks so thin?"</td><td>All real logic lives in <code>src/pipelines/</code> so it's unit-testable with local PySpark, no Databricks cluster needed. Notebooks only wire job parameters to that logic.</td></tr>
+        <tr><td>"What's the difference between raw, bronze, audit, and ops schemas?"</td><td>Four genuinely different concerns: raw = untouched landing files, bronze = first Delta tables, audit = human-queryable pipeline run logs, ops = opaque pipeline bookkeeping (streaming checkpoints) — kept separate so each can have its own governance/retention rules.</td></tr>
+        <tr><td>"What's left before Day 4?"</td><td>Silver layer: strict typing + schema-equality validation against those strict types, dedup, the node_locations bad-coordinate quarantine, telegram's inconsistent date parsing — all deliberately deferred, not forgotten.</td></tr>
+      </table>
+    </section>
+
+    <footer>Generated from a full read of the repository at the current commit — every function signature and file path above reflects the actual code, not a summary of intent.</footer>
+  </main>
+</div>
+</body>
+</html>

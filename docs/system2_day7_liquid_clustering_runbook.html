@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System 2 Sync — Day 7 Liquid Clustering Benchmark</title>
+<style>
+  :root{
+    --bg:#f5f6f7; --surface:#ffffff; --ink:#1c2126; --muted:#6b7280; --line:#e2e5e8;
+    --accent:#b5551f; --accent-ink:#ffffff; --screenshot:#2f6690; --screenshot-bg:#eaf2f7;
+    --success:#2f6b40; --success-bg:#eaf4ec; --code-bg:#f0f1f3; --code-ink:#3a3f45;
+    --danger:#8a3a3a; --danger-bg:#fbeeee;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#181b1f; --surface:#20242a; --ink:#edeff1; --muted:#9aa3ac; --line:#2c3138;
+      --accent:#e08a52; --accent-ink:#20140b; --screenshot:#7db3d6; --screenshot-bg:#1c2a33;
+      --success:#7fcf93; --success-bg:#16261a; --code-bg:#171a1e; --code-ink:#d7dbe0;
+      --danger:#e08a8a; --danger-bg:#2a1a1a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#181b1f; --surface:#20242a; --ink:#edeff1; --muted:#9aa3ac; --line:#2c3138;
+    --accent:#e08a52; --accent-ink:#20140b; --screenshot:#7db3d6; --screenshot-bg:#1c2a33;
+    --success:#7fcf93; --success-bg:#16261a; --code-bg:#171a1e; --code-ink:#d7dbe0;
+    --danger:#e08a8a; --danger-bg:#2a1a1a;
+  }
+  :root[data-theme="light"]{
+    --bg:#f5f6f7; --surface:#ffffff; --ink:#1c2126; --muted:#6b7280; --line:#e2e5e8;
+    --accent:#b5551f; --accent-ink:#ffffff; --screenshot:#2f6690; --screenshot-bg:#eaf2f7;
+    --success:#2f6b40; --success-bg:#eaf4ec; --code-bg:#f0f1f3; --code-ink:#3a3f45;
+    --danger:#8a3a3a; --danger-bg:#fbeeee;
+  }
+
+  * { box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  code, pre, .mono, .path{
+    font-family:"Cascadia Code","Cascadia Mono",ui-monospace,"Segoe UI Mono",Consolas,"Courier New",monospace;
+  }
+  .wrap{ max-width:820px; margin:0 auto; padding:0 20px 120px; }
+
+  header.top{ padding:56px 0 28px; border-bottom:1px solid var(--line); }
+  header.top .eyebrow{
+    font-size:12.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 10px;
+  }
+  header.top h1{
+    font-size:clamp(26px,4vw,36px); font-weight:700; margin:0 0 12px; letter-spacing:-.01em;
+    text-wrap:balance;
+  }
+  header.top p{ margin:0; color:var(--muted); max-width:66ch; font-size:15.5px; }
+
+  nav.jump{
+    position:sticky; top:0; z-index:20; background:var(--bg);
+    border-bottom:1px solid var(--line); padding:10px 0;
+    display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;
+  }
+  nav.jump a{
+    flex:1; text-align:center; padding:9px 8px; border-radius:8px; font-size:12.5px;
+    font-weight:600; text-decoration:none; border:1px solid var(--line); color:var(--muted);
+    background:var(--surface); transition:border-color .15s; min-width:110px;
+  }
+  nav.jump a:hover{ border-color:var(--accent); color:var(--accent); }
+
+  .prereq{
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:20px 22px; margin:28px 0 8px;
+  }
+  .prereq h2{ font-size:15px; margin:0 0 10px; font-weight:700; }
+  .prereq ul{ margin:0; padding-left:20px; }
+  .prereq li{ margin:5px 0; font-size:14.5px; }
+
+  .part-banner{
+    margin:52px 0 22px; padding:22px 26px; border-radius:14px; color:var(--accent-ink);
+    background:var(--accent); display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
+  }
+  .part-banner .num{ font-size:26px; font-weight:800; letter-spacing:-.01em; }
+  .part-banner .scope{ font-size:14px; opacity:.92; }
+
+  .step{
+    position:relative; background:var(--surface); border:1px solid var(--line);
+    border-radius:12px; padding:20px 22px 22px; margin:14px 0;
+  }
+  .step-head{ display:flex; align-items:flex-start; gap:12px; margin-bottom:4px; }
+  .step-num{
+    flex:none; width:30px; height:30px; border-radius:8px; background:var(--code-bg);
+    color:var(--muted); font-weight:700; font-size:13.5px; display:flex; align-items:center;
+    justify-content:center; font-variant-numeric:tabular-nums;
+  }
+  .step.done .step-num{ background:var(--success-bg); color:var(--success); }
+  .step-title{ font-size:16px; font-weight:700; margin:2px 0 0; flex:1; text-wrap:balance; }
+  .step-why{ color:var(--muted); font-size:13.5px; margin:6px 0 12px 42px; }
+  .step-body{ margin-left:42px; }
+  .step-body p{ margin:8px 0; font-size:14.5px; }
+  .file-chip{
+    display:inline-flex; align-items:center; gap:7px; background:var(--code-bg);
+    border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:13px;
+    margin:4px 0; color:var(--code-ink);
+  }
+  .file-chip .tag{
+    font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+    padding:1px 6px; border-radius:5px;
+  }
+  .tag-new{ background:var(--success-bg); color:var(--success); }
+  .tag-edit{ background:var(--screenshot-bg); color:var(--screenshot); }
+  .tag-del{ background:var(--danger-bg); color:var(--danger); }
+
+  pre{
+    background:var(--code-bg); color:var(--code-ink); border:1px solid var(--line);
+    border-radius:9px; padding:13px 15px; font-size:12.6px; overflow-x:auto; margin:10px 0;
+    line-height:1.5;
+  }
+  .check{
+    position:absolute; top:20px; right:20px; width:20px; height:20px; cursor:pointer;
+    accent-color:var(--success);
+  }
+
+  .shot{
+    display:flex; gap:12px; background:var(--screenshot-bg); border:1px solid var(--screenshot);
+    border-radius:9px; padding:12px 14px; margin:12px 0 4px; align-items:flex-start;
+  }
+  .shot .icon{ flex:none; font-size:18px; line-height:1.3; }
+  .shot .txt{ font-size:13.4px; color:var(--ink); }
+  .shot .txt b{ color:var(--screenshot); }
+
+  .danger{
+    display:flex; gap:12px; background:var(--danger-bg); border:1.5px solid var(--danger);
+    border-radius:9px; padding:14px 16px; margin:12px 0 4px; align-items:flex-start;
+  }
+  .danger .icon{ flex:none; font-size:19px; line-height:1.3; }
+  .danger .txt{ font-size:13.6px; color:var(--ink); }
+  .danger .txt b{ color:var(--danger); }
+
+  .note{
+    display:flex; gap:12px; background:var(--code-bg); border:1px solid var(--line);
+    border-radius:9px; padding:12px 14px; margin:12px 0 4px; align-items:flex-start;
+  }
+  .note .icon{ flex:none; font-size:17px; line-height:1.3; }
+  .note .txt{ font-size:13.4px; color:var(--muted); }
+
+  .step input[type="checkbox"]:checked ~ .step-body{ opacity:.55; }
+  .step input[type="checkbox"]:checked ~ .step-head .step-title{ text-decoration:line-through; opacity:.6; }
+
+  table.results{ width:100%; border-collapse:collapse; margin:10px 0; font-size:13px; }
+  table.results th, table.results td{
+    border:1px solid var(--line); padding:7px 10px; text-align:left; font-variant-numeric:tabular-nums;
+  }
+  table.results th{ background:var(--code-bg); font-weight:700; }
+  table.results td.blank{ color:var(--muted); font-style:italic; }
+
+  footer{ margin-top:60px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">vstone-databricks-pipeline · System 2 sync</p>
+    <h1>Day 7 — Liquid Clustering vs. partitioning + Z-ordering benchmark</h1>
+    <p>Two changes on <code>feature/gold-layer</code>: removing a redundant Gold job, then applying and benchmarking Liquid Clustering on <code>fact_street_conditions</code> against a hand-built partitioned + Z-ordered comparison table. This is a manual, file-by-file walkthrough — no dependency on pulling commits from origin.</p>
+  </header>
+
+  <nav class="jump">
+    <a href="#p1">1 · Remove job</a>
+    <a href="#p2">2 · Clustering</a>
+    <a href="#p3">3 · Benchmark script</a>
+    <a href="#p4">4 · Run &amp; evidence</a>
+    <a href="#p5">5 · Tests &amp; git</a>
+  </nav>
+
+  <div class="prereq">
+    <h2>Where you already are</h2>
+    <ul>
+      <li>Branch <code>feature/gold-layer</code>, with Day 6's Gold layer build (dimensions, facts, aggregates, PK/FK via <code>schema=</code>) and the audit-column-passthrough fix already applied — if not, do that first, this guide only covers Day 7's additions on top.</li>
+      <li><code>fact_street_conditions</code> exists and has already been verified at 87,776,721 rows.</li>
+      <li>This guide adds/removes 5 files, then deploys, full-refreshes, runs a real benchmark, and documents your own real numbers (not the ones below — your environment's timings will differ).</li>
+    </ul>
+  </div>
+
+  <div id="p1" class="part-banner">
+    <span class="num">1</span>
+    <span class="scope">Remove the redundant gold_aggregates_job</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s1"/>
+    <div class="step-head"><div class="step-num">1</div><div class="step-title">Delete resources/jobs/gold_aggregates_job.yml</div></div>
+    <div class="step-why">Every Gold table (dimensions, facts, and both aggregates) lives in the one gold_dlt_pipeline. gold_aggregates_job's pipeline_task pointed at that exact same pipeline as gold_job — pure duplication, not a narrower trigger. A pipeline_task is all-or-nothing at the job level; there's no way to scope a job to just the aggregate tables.</div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-del">delete</span> <span class="path">resources/jobs/gold_aggregates_job.yml</span></div>
+      <p>Just remove the file entirely.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s2"/>
+    <div class="step-head"><div class="step-num">2</div><div class="step-title">Edit docs/gold_data_model.md — replace the aggregates-job paragraph</div></div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">docs/gold_data_model.md</span></div>
+      <p>Find the paragraph right after the <code>gold_street_risk_summary</code> bullet (starts "Both aggregates are wired into their own DABs job...") and replace it with:</p>
+      <pre>Both aggregates run as part of `gold_job` (`resources/jobs/gold_job.yml`) --
+there is no separate aggregates job. Every Gold table (dimensions, facts,
+and both aggregates) lives in the one `gold_dlt_pipeline` DLT pipeline, so a
+`pipeline_task` is all-or-nothing at the job level: DLT's own dependency
+graph and incremental engine decide internally what actually needs
+recomputing on a refresh, and there's no way to scope a job to just the
+aggregate tables. An earlier `gold_aggregates_job` existed briefly as a
+separate, identically-configured job pointing at the same pipeline -- pure
+duplication with `gold_job`, not a narrower trigger -- and was removed for
+that reason. Bronze and Silver each have exactly one job per pipeline; Gold
+now follows the same convention.</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s3"/>
+    <div class="step-head"><div class="step-num">3</div><div class="step-title">Redeploy and confirm the job is gone</div></div>
+    <div class="step-body">
+      <pre>databricks bundle validate -t dev
+databricks bundle deploy   -t dev --auto-approve
+databricks bundle summary  -t dev | grep -i gold</pre>
+      <p>Expect only <code>gold_job</code> and <code>gold_dlt_pipeline</code> to show up — no <code>gold_aggregates_job</code>.</p>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — the Databricks Jobs list page showing only "Gold Layer" job (no "Gold Aggregates" entry anymore).</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="p2" class="part-banner">
+    <span class="num">2</span>
+    <span class="scope">Apply Liquid Clustering to fact_street_conditions</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s4"/>
+    <div class="step-head"><div class="step-num">4</div><div class="step-title">(Optional but recommended) Witness the real ALTER TABLE failure yourself</div></div>
+    <div class="step-why">Confirms the same EXPECT_TABLE_NOT_VIEW limitation already hit with PK/FK constraints applies to clustering too — worth seeing first-hand, not just taking on faith.</div>
+    <div class="step-body">
+      <p>In any notebook attached to your workspace, run:</p>
+      <pre>ALTER TABLE &lt;catalog&gt;.&lt;gold_schema&gt;.fact_street_conditions
+CLUSTER BY (street_key, date_key)</pre>
+      <p>Expect it to fail with:</p>
+      <pre>[EXPECT_TABLE_NOT_VIEW.NO_ALTERNATIVE] 'ALTER TABLE ... CLUSTER BY'
+expects a table but `...`.`fact_street_conditions` is a view.</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — the real error. Unity Catalog registers this DLT materialized view as a VIEW object, so post-hoc ALTER TABLE can't touch it regardless of what the ALTER is trying to do.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s5"/>
+    <div class="step-head"><div class="step-num">5</div><div class="step-title">Edit src/pipelines/gold/dlt_gold_tables.py — add cluster_by to fact_street_conditions</div></div>
+    <div class="step-why">Same pattern that worked for PK/FK constraints: declare it at table-creation time via the @dlt.table decorator, not via a later ALTER TABLE.</div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-edit">edit</span> <span class="path">src/pipelines/gold/dlt_gold_tables.py</span></div>
+      <p>Find the <code>fact_street_conditions</code> table definition and add <code>cluster_by</code>:</p>
+      <pre>@dlt.table(
+    name="fact_street_conditions",
+    comment=_FACT_STREET_CONDITIONS_CFG["description"],
+    schema=FACT_STREET_CONDITIONS_SCHEMA,
+    # Liquid Clustering on the two columns most likely to be filtered/joined
+    # on (see docs/liquid_clustering_benchmark.md) -- ALTER TABLE ... CLUSTER
+    # BY cannot be applied post-hoc to this table (same
+    # EXPECT_TABLE_NOT_VIEW.NO_ALTERNATIVE limitation as PK/FK constraints,
+    # confirmed live), so cluster_by is declared here instead, at
+    # table-creation time, same pattern as schema=.
+    cluster_by=["street_key", "date_key"],
+)
+def fact_street_conditions():
+    environment_df = spark.table(_ENVIRONMENT_TABLE)
+    dim_street_df = spark.table("dim_street")
+    dim_date_df = spark.table("dim_date")
+    return build_fact_street_conditions(environment_df, dim_street_df, dim_date_df)</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s6"/>
+    <div class="step-head"><div class="step-num">6</div><div class="step-title">Redeploy and full-refresh the Gold pipeline</div></div>
+    <div class="step-why">cluster_by is a table-definition change for an existing table — a normal run won't apply it, only a full-refresh recomputes the table under the new declaration.</div>
+    <div class="step-body">
+      <pre>databricks bundle deploy -t dev --auto-approve
+
+# get the pipeline id
+databricks bundle summary -t dev | grep -A3 gold_dlt_pipeline
+
+databricks pipelines start-update &lt;gold_dlt_pipeline_id&gt; --full-refresh</pre>
+      <p>Poll until it shows <code>COMPLETED</code>:</p>
+      <pre>databricks pipelines get-update &lt;pipeline_id&gt; &lt;update_id&gt;</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s7"/>
+    <div class="step-head"><div class="step-num">7</div><div class="step-title">Verify clustering actually applied</div></div>
+    <div class="step-body">
+      <p>In a notebook:</p>
+      <pre>DESCRIBE TABLE EXTENDED &lt;catalog&gt;.&lt;gold_schema&gt;.fact_street_conditions</pre>
+      <p>Look for a "Table Properties" row containing:</p>
+      <pre>clusteringColumns=[["street_key"],["date_key"]]</pre>
+      <p>Also re-confirm the row count is still exact:</p>
+      <pre>SELECT COUNT(*) FROM &lt;catalog&gt;.&lt;gold_schema&gt;.fact_street_conditions
+-- expect 87776721</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — the DESCRIBE TABLE EXTENDED output showing clusteringColumns, plus the row count query. This is your real evidence that Liquid Clustering is live, not just declared in code.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="p3" class="part-banner">
+    <span class="num">3</span>
+    <span class="scope">Build the benchmark notebook</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s8"/>
+    <div class="step-head"><div class="step-num">8</div><div class="step-title">Create src/notebooks/06_liquid_clustering_benchmark.py</div></div>
+    <div class="step-why">A plain Delta table (not a DLT table) built by a one-off script — clearly a benchmark artifact, never added to the documented Gold data model, ER diagram, or sources.yml.</div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new file</span> <span class="path">src/notebooks/06_liquid_clustering_benchmark.py</span></div>
+      <p>Copy this exactly — it's deterministic code, not something to retype from memory:</p>
+      <pre># Databricks notebook source
+# MAGIC %md
+# MAGIC # Liquid Clustering vs. partitioning + Z-ordering benchmark — Day 7
+# MAGIC Real, measured comparison on `fact_street_conditions` (~87.8M rows) --
+# MAGIC the biggest table in Gold (bigger than `fact_traffic_counts`'s 24.68M
+# MAGIC rows) and the one most likely to be filtered/joined on
+# MAGIC `street_key`/`date_key` in real queries. `fact_traffic_counts` has a
+# MAGIC simpler, straight-aggregation access pattern, so it's not used here.
+# MAGIC
+# MAGIC Liquid Clustering itself is applied directly to `fact_street_conditions`
+# MAGIC via `cluster_by=["street_key", "date_key"]` on its `@dlt.table` decorator
+# MAGIC (see `dlt_gold_tables.py`) -- `ALTER TABLE ... CLUSTER BY` cannot be
+# MAGIC applied post-hoc to this table (confirmed live:
+# MAGIC `EXPECT_TABLE_NOT_VIEW.NO_ALTERNATIVE`, the same limitation already hit
+# MAGIC with PK/FK constraints), so `cluster_by` is declared at table-creation
+# MAGIC time instead, same pattern as `schema=`.
+# MAGIC
+# MAGIC This notebook builds the comparison side: a plain (non-DLT) Delta table,
+# MAGIC `fact_street_conditions_zorder_benchmark`, partitioned by year/month and
+# MAGIC `OPTIMIZE ... ZORDER BY (street_key)`'d -- a benchmark artifact only, not
+# MAGIC part of the documented Gold data model / ER diagram / PK-FK set. Then it
+# MAGIC runs the same representative queries against both tables and records
+# MAGIC real wall-clock timings.
+
+# COMMAND ----------
+
+import json
+import os
+import sys
+import time
+
+NOTEBOOK_DIR = os.path.dirname(os.path.abspath(__file__)) if "__file__" in dir() else os.getcwd()
+REPO_ROOT = os.path.abspath(os.path.join(NOTEBOOK_DIR, "..", ".."))
+SRC_DIR = os.path.join(REPO_ROOT, "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
+# COMMAND ----------
+
+dbutils.widgets.text("catalog", "vstone_traffic_dev", "Catalog")
+dbutils.widgets.text("env", "dev", "Environment (dev/test/prod)")
+
+catalog = dbutils.widgets.get("catalog")
+env = dbutils.widgets.get("env")
+
+# COMMAND ----------
+
+from pyspark.sql import functions as F  # noqa: E402
+
+from utils.config_loader import get_source_config  # noqa: E402
+
+LIQUID_TABLE = get_source_config("fact_street_conditions", env=env)["target_table"]
+GOLD_SCHEMA = LIQUID_TABLE.rsplit(".", 2)[1]
+BENCHMARK_TABLE = f"{catalog}.{GOLD_SCHEMA}.fact_street_conditions_zorder_benchmark"
+
+print(f"Liquid Clustering table: {LIQUID_TABLE}")
+print(f"Partition+Z-order benchmark table: {BENCHMARK_TABLE}")
+
+# COMMAND ----------
+
+liquid_df = spark.table(LIQUID_TABLE)
+
+with_partition_cols = liquid_df.withColumn(
+    "year", (F.col("date_key") / 10000).cast("int")
+).withColumn(
+    "month", ((F.col("date_key") / 100) % 100).cast("int")
+)
+
+(
+    with_partition_cols.write.format("delta")
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
+    .partitionBy("year", "month")
+    .saveAsTable(BENCHMARK_TABLE)
+)
+print(f"Wrote {BENCHMARK_TABLE}, partitioned by year/month.")
+
+# COMMAND ----------
+
+spark.sql(f"OPTIMIZE {BENCHMARK_TABLE} ZORDER BY (street_key)")
+print(f"OPTIMIZE ... ZORDER BY (street_key) complete on {BENCHMARK_TABLE}.")
+
+# COMMAND ----------
+
+liquid_count = spark.table(LIQUID_TABLE).count()
+benchmark_count = spark.table(BENCHMARK_TABLE).count()
+print(f"fact_street_conditions row count: {liquid_count}")
+print(f"fact_street_conditions_zorder_benchmark row count: {benchmark_count}")
+
+if liquid_count != 87_776_721 or benchmark_count != 87_776_721:
+    raise RuntimeError(
+        f"STOP: expected both tables at 87,776,721 rows (the already-verified silver_environment "
+        f"accepted count), got liquid={liquid_count}, benchmark={benchmark_count}."
+    )
+
+# COMMAND ----------
+
+sample_month_count = (
+    spark.table(LIQUID_TABLE)
+    .filter("street_key = 1 AND date_key BETWEEN 20230801 AND 20230831")
+    .count()
+)
+print(f"street_key=1, August 2023 row count: {sample_month_count} (confirms a real, non-trivial slice)")
+
+# COMMAND ----------
+
+
+def timed_runs(label, query_fn, runs=3):
+    times = []
+    for i in range(runs):
+        start = time.perf_counter()
+        result = query_fn()
+        elapsed = time.perf_counter() - start
+        times.append(elapsed)
+        tag = "cold (discarded)" if i == 0 else "warm"
+        print(f"{label} — run {i + 1} ({tag}): {elapsed:.3f}s — result={result}")
+    warm_times = times[1:]
+    avg_warm = sum(warm_times) / len(warm_times)
+    print(f"{label} — avg of warm runs: {avg_warm:.3f}s\n")
+    return {"all_times": times, "warm_times": warm_times, "avg_warm": avg_warm}
+
+
+# COMMAND ----------
+
+def q1_liquid():
+    row = (
+        spark.sql(
+            f"""
+            SELECT AVG(pollution) AS avg_pollution, COUNT(*) AS n
+            FROM {LIQUID_TABLE}
+            WHERE street_key = 1 AND date_key BETWEEN 20230801 AND 20230831
+            """
+        )
+        .collect()[0]
+    )
+    return {"avg_pollution": row["avg_pollution"], "n": row["n"]}
+
+
+def q1_benchmark():
+    row = (
+        spark.sql(
+            f"""
+            SELECT AVG(pollution) AS avg_pollution, COUNT(*) AS n
+            FROM {BENCHMARK_TABLE}
+            WHERE street_key = 1 AND year = 2023 AND month = 8
+            """
+        )
+        .collect()[0]
+    )
+    return {"avg_pollution": row["avg_pollution"], "n": row["n"]}
+
+
+q1_liquid_results = timed_runs("Q1 Liquid Clustering", q1_liquid)
+q1_benchmark_results = timed_runs("Q1 Partition+Z-order", q1_benchmark)
+
+# COMMAND ----------
+
+def q2_liquid():
+    row = (
+        spark.sql(
+            f"""
+            SELECT COUNT(*) AS n, AVG(noise) AS avg_noise, AVG(pollution) AS avg_pollution
+            FROM {LIQUID_TABLE}
+            WHERE street_key = 1
+            """
+        )
+        .collect()[0]
+    )
+    return {"n": row["n"], "avg_noise": row["avg_noise"], "avg_pollution": row["avg_pollution"]}
+
+
+def q2_benchmark():
+    row = (
+        spark.sql(
+            f"""
+            SELECT COUNT(*) AS n, AVG(noise) AS avg_noise, AVG(pollution) AS avg_pollution
+            FROM {BENCHMARK_TABLE}
+            WHERE street_key = 1
+            """
+        )
+        .collect()[0]
+    )
+    return {"n": row["n"], "avg_noise": row["avg_noise"], "avg_pollution": row["avg_pollution"]}
+
+
+q2_liquid_results = timed_runs("Q2 Liquid Clustering", q2_liquid)
+q2_benchmark_results = timed_runs("Q2 Partition+Z-order", q2_benchmark)
+
+# COMMAND ----------
+
+
+def pct_diff(a, b):
+    """% difference of b relative to a, signed -- positive means b is slower."""
+    return (b - a) / a * 100
+
+
+summary_rows = [
+    ("Q1: avg pollution, street=1, Aug 2023", q1_liquid_results["avg_warm"], q1_benchmark_results["avg_warm"]),
+    ("Q2: all readings, street=1, full range", q2_liquid_results["avg_warm"], q2_benchmark_results["avg_warm"]),
+]
+
+print(f"{'Query':45} {'Liquid (s)':>12} {'Partition+Z (s)':>16} {'Delta (s)':>10} {'% diff':>8}")
+for label, liquid_avg, benchmark_avg in summary_rows:
+    delta = benchmark_avg - liquid_avg
+    diff = pct_diff(liquid_avg, benchmark_avg)
+    print(f"{label:45} {liquid_avg:>12.3f} {benchmark_avg:>16.3f} {delta:>10.3f} {diff:>7.1f}%")
+
+# COMMAND ----------
+
+evidence = {
+    "liquid_table": LIQUID_TABLE,
+    "benchmark_table": BENCHMARK_TABLE,
+    "liquid_row_count": liquid_count,
+    "benchmark_row_count": benchmark_count,
+    "sample_month_row_count": sample_month_count,
+    "q1_liquid": q1_liquid_results,
+    "q1_benchmark": q1_benchmark_results,
+    "q2_liquid": q2_liquid_results,
+    "q2_benchmark": q2_benchmark_results,
+    "summary": [
+        {
+            "query": label,
+            "liquid_avg_warm_s": liquid_avg,
+            "partition_zorder_avg_warm_s": benchmark_avg,
+            "delta_s": benchmark_avg - liquid_avg,
+            "pct_diff": pct_diff(liquid_avg, benchmark_avg),
+        }
+        for label, liquid_avg, benchmark_avg in summary_rows
+    ],
+}
+dbutils.notebook.exit(json.dumps(evidence, default=str))</pre>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s9"/>
+    <div class="step-head"><div class="step-num">9</div><div class="step-title">flake8 — no config change needed</div></div>
+    <div class="step-body">
+      <p><code>src/notebooks/</code> is already fully excluded from lint in <code>setup.cfg</code> (same reason every other notebook file in this project is: injected <code>spark</code>/<code>dbutils</code> globals that flake8 doesn't understand). Just confirm the rest of the repo is still clean:</p>
+      <pre>flake8 src tests --max-line-length=120</pre>
+    </div>
+  </div>
+
+  <div id="p4" class="part-banner">
+    <span class="num">4</span>
+    <span class="scope">Run it and capture your own real evidence</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s10"/>
+    <div class="step-head"><div class="step-num">10</div><div class="step-title">Deploy and run the benchmark notebook</div></div>
+    <div class="step-why">This writes ~87.8M rows into a new table and runs 12 real queries against it (2 queries × 2 tables × 3 runs) — expect this to take several minutes, not seconds.</div>
+    <div class="step-body">
+      <pre>databricks bundle deploy -t dev --auto-approve</pre>
+      <p>Open the notebook in the Databricks UI (under your bundle's deployed files path) and run all cells top to bottom, <b>or</b> submit it as a one-time job with <code>catalog</code>/<code>env</code> parameters if you'd rather not babysit it interactively.</p>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot each of these as they run</b> — the row-count parity check (both tables at 87,776,721), the sample-month count, each of the 4 <code>timed_runs</code> blocks (Q1 Liquid, Q1 benchmark, Q2 Liquid, Q2 benchmark) showing all 3 runs per query, and the final summary table print.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s11"/>
+    <div class="step-head"><div class="step-num">11</div><div class="step-title">Create docs/liquid_clustering_benchmark.md — with YOUR real numbers</div></div>
+    <div class="step-why">Your timings will genuinely differ from any other run — different cluster warm-up state, different physical file layout, normal run-to-run noise. Copy the structure below, not any specific numbers from someone else's run — that would misrepresent evidence you didn't actually capture.</div>
+    <div class="step-body">
+      <div class="file-chip"><span class="tag tag-new">new file</span> <span class="path">docs/liquid_clustering_benchmark.md</span></div>
+      <p>Template — replace every <code>___</code> with what your own run actually printed:</p>
+      <pre># Day 7: Liquid Clustering vs. partitioning + Z-ordering benchmark
+
+Run against `fact_street_conditions` (~87.8M rows) on `feature/gold-layer`.
+Not merged to `dev`.
+
+## Why fact_street_conditions, not fact_traffic_counts
+
+fact_street_conditions (87,776,721 rows) is the larger of the two fact
+tables -- fact_traffic_counts has 24,681,794 rows. fact_traffic_counts
+also has a simpler, straight-aggregation access pattern
+(gold_monthly_traffic_summary already covers that). fact_street_conditions
+is the table most likely to be filtered/joined on street_key/date_key in
+real queries.
+
+## Applying Liquid Clustering
+
+ALTER TABLE ... CLUSTER BY failed directly against the existing table:
+
+    [paste your real EXPECT_TABLE_NOT_VIEW error text here]
+
+Fixed via cluster_by=["street_key", "date_key"] on the @dlt.table
+decorator instead. Confirmed via DESCRIBE TABLE EXTENDED:
+
+    clusteringColumns=[["street_key"],["date_key"]]
+
+Row count after full-refresh: 87,776,721 -- unchanged.
+
+## The comparison table
+
+fact_street_conditions_zorder_benchmark -- plain Delta table, partitioned
+by year/month (derived from date_key), OPTIMIZE ... ZORDER BY
+(street_key). Row count: ___ (must be 87,776,721).
+
+## Benchmark queries and results
+
+Sample slice: street_key=1, August 2023 -- ___ rows.
+
+| Query | Liquid Clustering (avg warm, s) | Partition + Z-order (avg warm, s) | Delta (s) | % difference |
+|---|---|---|---|---|
+| Q1: avg pollution, street=1, Aug 2023 | ___ | ___ | ___ | ___ |
+| Q2: all readings, street=1, full range | ___ | ___ | ___ | ___ |
+
+## What actually happened
+
+[Write 2-3 honest sentences about YOUR results: was one approach faster,
+by how much, was it dramatic or marginal? Same standard as every other
+verification in this project -- report what actually happened, not what
+"should" happen in theory. A result like "within X% of each other, no
+decisive winner" is just as legitimate a finding as a dramatic difference
+would have been.]</pre>
+      <table class="results">
+        <tr><th>Field</th><th>Fill in from</th></tr>
+        <tr><td>EXPECT_TABLE_NOT_VIEW error text</td><td class="blank">Step 4 screenshot</td></tr>
+        <tr><td>Benchmark table row count</td><td class="blank">Step 10 row-count parity screenshot</td></tr>
+        <tr><td>Sample month row count</td><td class="blank">Step 10 sample-month screenshot</td></tr>
+        <tr><td>Q1 / Q2 timings</td><td class="blank">Step 10 timed_runs + summary screenshots</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div id="p5" class="part-banner">
+    <span class="num">5</span>
+    <span class="scope">Tests and git</span>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s12"/>
+    <div class="step-head"><div class="step-num">12</div><div class="step-title">Run the full local test suite</div></div>
+    <div class="step-why">Neither change touched any tested Python transformation logic (only a DLT table declaration and a one-off notebook), so this should be unaffected -- confirm rather than assume.</div>
+    <div class="step-body">
+      <pre>pytest tests/unit -q</pre>
+      <div class="shot">
+        <div class="icon">📸</div>
+        <div class="txt"><b>Screenshot this</b> — all tests passing, unchanged count from before Day 7.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <input class="check" type="checkbox" id="s13"/>
+    <div class="step-head"><div class="step-num">13</div><div class="step-title">Commit as two separate commits, same branch</div></div>
+    <div class="step-body">
+      <p>First commit — the job cleanup:</p>
+      <pre>git add resources/jobs/gold_aggregates_job.yml docs/gold_data_model.md
+git commit -m "Remove redundant gold_aggregates_job
+
+Both aggregate tables already live in the one gold_dlt_pipeline that
+gold_job triggers, so gold_aggregates_job was pointing at the exact same
+pipeline under a different name -- pure duplication, not a narrower
+trigger."</pre>
+      <p>Second commit — the benchmark work:</p>
+      <pre>git add src/pipelines/gold/dlt_gold_tables.py docs/liquid_clustering_benchmark.md \
+        src/notebooks/06_liquid_clustering_benchmark.py
+git commit -m "Day 7: Liquid Clustering vs. partitioning + Z-ordering benchmark
+
+Real, measured comparison on fact_street_conditions. cluster_by declared
+at table-creation time (ALTER TABLE ... CLUSTER BY fails on this DLT
+materialized view). Comparison table built and benchmarked against it."</pre>
+      <div class="note">
+        <div class="icon">ℹ️</div>
+        <div class="txt">Stays on <code>feature/gold-layer</code>, not merged to <code>dev</code> — the incremental-load/<code>MERGE INTO</code> work is still pending on this same branch.</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Checkboxes save locally in this browser tab only — they're for your own pacing, not a submission record.</footer>
+</div>
+
+<script>
+  document.querySelectorAll('.step input[type="checkbox"]').forEach(function(box){
+    var key = 'day7-liquid-clustering-runbook-' + box.id;
+    box.checked = localStorage.getItem(key) === '1';
+    if(box.checked) box.closest('.step').classList.add('done');
+    box.addEventListener('change', function(){
+      localStorage.setItem(key, box.checked ? '1' : '0');
+      box.closest('.step').classList.toggle('done', box.checked);
+    });
+  });
+</script>
+</body>
+</html>
