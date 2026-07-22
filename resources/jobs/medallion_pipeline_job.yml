@@ -1,0 +1,75 @@
+# Day 8-9 — cross-job dependency enforcement, closing the gap flagged since
+# Bronze: Bronze, Silver, and Gold used to run as independent jobs triggered
+# manually/separately, with nothing enforcing that Bronze finishes before
+# Silver starts, or Silver before Gold.
+#
+# One orchestrating job, not job-to-job triggers -- chosen because Bronze is
+# actually THREE separate jobs (data_chunking_job, bronze_copy_into_job,
+# bronze_autoloader_pyspark_dlt_job), and Silver has a real fan-in dependency
+# on the latter two running in parallel. Databricks has no native "wait for
+# 2 upstream jobs" trigger; that would mean scattering a run_job_task into
+# the tail of two separate job definitions with no clean way to guarantee
+# Silver starts only once, after both. A single job with depends_on handles
+# a fan-in naturally and keeps the whole chain visible in one file instead
+# of scattered across 5.
+#
+# Every task uses run_job_task against the EXISTING job resources (not
+# pipeline_task direct to the DLT pipelines) -- this orchestrator is purely a
+# sequencing layer on top of what already exists. If a task is later added
+# inside e.g. bronze_copy_into_job, this file doesn't need to change to pick
+# it up. None of the 5 existing jobs' display names, tasks, or structure are
+# touched (data_chunking_job keeps its exact "Data Chunking" name).
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy   -t dev
+#   databricks bundle run medallion_pipeline_job -t dev
+
+resources:
+  jobs:
+    medallion_pipeline_job:
+      name: "Medallion Pipeline (Bronze -> Silver -> Gold)"
+      tags:
+        project: vstone-traffic
+        layer: orchestration
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: env
+          default: ${bundle.target}
+
+      tasks:
+        - task_key: data_chunking
+          run_job_task:
+            job_id: ${resources.jobs.data_chunking_job.id}
+
+        - task_key: bronze_copy_into
+          depends_on:
+            - task_key: data_chunking
+          run_job_task:
+            job_id: ${resources.jobs.bronze_copy_into_job.id}
+
+        - task_key: bronze_autoloader_pyspark_dlt
+          depends_on:
+            - task_key: data_chunking
+          run_job_task:
+            job_id: ${resources.jobs.bronze_autoloader_pyspark_dlt_job.id}
+
+        - task_key: silver
+          depends_on:
+            - task_key: bronze_copy_into
+            - task_key: bronze_autoloader_pyspark_dlt
+          run_job_task:
+            job_id: ${resources.jobs.silver_job.id}
+
+        - task_key: gold
+          depends_on:
+            - task_key: silver
+          run_job_task:
+            job_id: ${resources.jobs.gold_job.id}
+
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+
+      max_concurrent_runs: 1

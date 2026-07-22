@@ -68,26 +68,33 @@ def test_copy_into_sql_targets_the_configured_table():
 def test_copy_into_sql_tags_every_row_with_audit_columns():
     cfg = {
         "target_table": "cat.schema.table",
-        "path": "/Volumes/cat/raw/raw_volume/incoming/streets.csv",
+        "path": "/Volumes/cat/raw/raw_volume/incoming/streets/streets.csv",
         "format": "csv",
     }
     sql = build_copy_into_sql(cfg, run_id="run-abc")
 
     assert "current_timestamp() AS load_dt" in sql
     assert "'csv' AS source_format" in sql
-    assert "'streets.csv' AS source_file" in sql
+    assert "_metadata.file_name AS source_file" in sql
     assert "'run-abc' AS run_id" in sql
 
 
-def test_copy_into_sql_derives_source_file_from_path():
+def test_copy_into_sql_derives_source_file_from_file_metadata_not_path():
+    """source_file must come from _metadata.file_name (resolved per-row, from
+    whichever file each row actually came from), not from parsing cfg["path"].
+    path can now be a watched folder (e.g. incoming/streets/) rather than one
+    exact file, so a literal parsed off path would be wrong -- and identical
+    for every row -- once more than one file can land there."""
     cfg = {
         "target_table": "cat.schema.table",
-        "path": "/Volumes/cat/raw/raw_volume/incoming/telegram.csv",
+        "path": "/Volumes/cat/raw/raw_volume/incoming/telegram/",
         "format": "csv",
     }
     sql = build_copy_into_sql(cfg, run_id="run-xyz")
 
-    assert "'telegram.csv' AS source_file" in sql
+    assert "_metadata.file_name AS source_file" in sql
+    assert "'telegram' AS source_file" not in sql
+    assert "'telegram/' AS source_file" not in sql
 
 
 def test_same_source_key_resolves_to_different_schema_per_environment():
@@ -113,7 +120,7 @@ def test_source_key_indirection_resolves_path_and_format():
     from utils.config_loader import get_source_config
 
     cfg = get_source_config("bronze_streets", env="dev")
-    assert cfg["path"].endswith("streets.csv")
+    assert cfg["path"].endswith("streets/")
     assert cfg["format"] == "csv"
     assert cfg["target_table"] == "vstone_traffic_dev.dev_rohitrathodcomp_bronze.street_conditions"
     assert "description" in cfg

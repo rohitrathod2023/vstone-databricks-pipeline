@@ -96,7 +96,16 @@ log.info("Kaggle authentication OK")
 results = {"skipped": [], "downloaded": [], "failed": []}
 
 for filename in files:
-    target_path = os.path.join(volume_root, filename)
+    # Each domain lands in its own subfolder (streets.csv -> incoming/streets/,
+    # node_locations.csv -> incoming/node_locations/, ...) instead of all 5
+    # files flat in one directory. This is what makes folder-watching
+    # ingestion (Auto Loader / COPY INTO pointed at a directory) meaningful --
+    # a technique can watch *one domain's* folder for new arrivals without
+    # also picking up unrelated domains that happen to share incoming/.
+    domain_dir = os.path.splitext(filename)[0]
+    target_dir = os.path.join(volume_root, domain_dir)
+    os.makedirs(target_dir, exist_ok=True)
+    target_path = os.path.join(target_dir, filename)
 
     if not force and os.path.exists(target_path):
         log.info(f"Skipping {filename} — already present in the volume")
@@ -108,7 +117,7 @@ for filename in files:
         # dataset_download_file (singular) fetches one named file directly, rather
         # than dataset_download_files' whole-dataset zip -- lets us test a couple
         # of small files before trusting this with the 7.8GB streets.csv.
-        api.dataset_download_file(dataset, filename, path=volume_root)
+        api.dataset_download_file(dataset, filename, path=target_dir)
 
         # Kaggle serves larger files compressed -- the client saves them as
         # <filename>.zip rather than the plain file, even though we asked for
@@ -118,7 +127,7 @@ for filename in files:
         zip_path = target_path + ".zip"
         if os.path.exists(zip_path):
             with zipfile.ZipFile(zip_path) as zf:
-                zf.extractall(volume_root)
+                zf.extractall(target_dir)
             os.remove(zip_path)
     except Exception as exc:  # noqa: BLE001 - want a clear failure per file, not an aborted loop
         log.error(f"  FAILED: {exc}")

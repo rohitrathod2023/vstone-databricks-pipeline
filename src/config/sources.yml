@@ -13,27 +13,27 @@
 # Day 1 — raw landing (uploaded once, read by the chunking job)
 # ---------------------------------------------------------------------------
 raw_cars:
-  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/cars.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/cars/
   format: csv
   description: Full cars.csv as downloaded from Kaggle, before chunking
 
 raw_streets:
-  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/streets.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/streets/
   format: csv
   description: Full streets.csv (7.8GB) — never chunked, ingested directly, held for Day 7 benchmark
 
 raw_node_locations:
-  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/node_locations.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/node_locations/
   format: csv
   description: 14 rows, includes bad coords at location=7 (quarantined in Silver)
 
 raw_streets_list:
-  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/streets_list.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/streets_list/
   format: csv
   description: 36 rows, street metadata incl. dangerous score (versioned SCD2 in Gold)
 
 raw_telegram:
-  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/telegram.csv
+  path: /Volumes/${catalog}/${raw_schema}/raw_volume/incoming/telegram/
   format: csv
   description: Free-text citizen reports, no key relationship to other tables
 
