@@ -23,7 +23,10 @@ _AUDIT_COLUMN_COMMENTS = {
 }
 
 _REJECTION_REASON_COMMENT = {
-    "rejection_reason": "Which quarantine rule this row failed -- see the paired non-rejected table's build function for the rule definitions.",
+    "rejection_reason": (
+        "Which quarantine rule this row failed -- see the paired non-rejected "
+        "table's build function for the rule definitions."
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -36,7 +39,10 @@ _CARS_COLUMNS = {
     "enter": "Vehicles entering the intersection in this reading, observed range 0-35.",
     "exit": "Vehicles exiting the intersection in this reading, observed range 0-35.",
     "date": "Reading timestamp, ISO8601.",
-    "id": "Traffic reading sequence number, observed range 0-998 -- NOT a unique row identifier alone; id+location+date together are the confirmed unique/dedup key.",
+    "id": (
+        "Traffic reading sequence number, observed range 0-998 -- NOT a unique row "
+        "identifier alone; id+location+date together are the confirmed unique/dedup key."
+    ),
     "location": "Intersection identifier, observed range 1-14. FK to node_locations.location (Dim_Location in Gold).",
 }
 
@@ -45,14 +51,21 @@ _STREETS_COLUMNS = {
     "pollution": "Pollution level reading, observed range 0-~46.9.",
     "date": "Reading timestamp, ISO8601.",
     "light": "Light level reading, observed range 5.14E-8-83.7.",
-    "raining": "Rain intensity reading. Real found anomaly: observed range is -0.9999999834 to 100.9999, outside the physically-valid 0-100 range -- quarantined at Silver (raining < 0 OR raining > 100).",
+    "raining": (
+        "Rain intensity reading. Real found anomaly: observed range is -0.9999999834 to "
+        "100.9999, outside the physically-valid 0-100 range -- quarantined at Silver "
+        "(raining < 0 OR raining > 100)."
+    ),
     "street_id": "Street identifier, observed range 1-36. FK to streets_list.street_id (Dim_Street in Gold).",
 }
 
 _NODE_LOCATIONS_COLUMNS = {
     "latitude": "Intersection latitude, 6-decimal precision.",
     "longitude": "Intersection longitude, 6-decimal precision.",
-    "location": "Intersection identifier, 1-14, unique per row. location=7 has bad (0,0) coordinates -- quarantined at Silver.",
+    "location": (
+        "Intersection identifier, 1-14, unique per row. location=7 has bad (0,0) "
+        "coordinates -- quarantined at Silver."
+    ),
 }
 
 _STREETS_LIST_COLUMNS = {
@@ -65,8 +78,14 @@ _STREETS_LIST_COLUMNS = {
 }
 
 _TELEGRAM_COLUMNS = {
-    "message": "Free-text citizen report. Some raw values have leading/trailing whitespace (real found data-quality issue).",
-    "date": "Report date as a raw string in DD/MM/YYYY format (confirmed via hard evidence, e.g. 30/07/2023 -- no month can be 30) -- not yet parsed to a real date at Bronze.",
+    "message": (
+        "Free-text citizen report. Some raw values have leading/trailing whitespace "
+        "(real found data-quality issue)."
+    ),
+    "date": (
+        "Report date as a raw string in DD/MM/YYYY format (confirmed via hard evidence, "
+        "e.g. 30/07/2023 -- no month can be 30) -- not yet parsed to a real date at Bronze."
+    ),
     "hour": "Report time-of-day as a raw HH:mm:ss string -- NOT a real timestamp, has no date component at Bronze.",
 }
 
@@ -108,12 +127,18 @@ _SILVER_STREETS_COLUMNS = {
 }
 
 _SILVER_TRAFFIC_COLUMNS = {
-    "id": "Traffic reading sequence number, 0-998 -- NOT unique alone; id+location+date together are the dedup key applied at this table.",
+    "id": (
+        "Traffic reading sequence number, 0-998 -- NOT unique alone; id+location+date "
+        "together are the dedup key applied at this table."
+    ),
     "location": "Intersection identifier, 1-14.",
     "enter": "Vehicles entering the intersection in this reading.",
     "exit": "Vehicles exiting the intersection in this reading.",
     "date": "Reading timestamp.",
-    "source_technique": "Which of the 4 Bronze ingestion techniques (COPY INTO/DLT/Auto Loader/PySpark) this row came from -- not brief-required, added for observability.",
+    "source_technique": (
+        "Which of the 4 Bronze ingestion techniques (COPY INTO/DLT/Auto Loader/PySpark) "
+        "this row came from -- not brief-required, added for observability."
+    ),
 }
 
 _SILVER_ENVIRONMENT_COLUMNS = {
@@ -122,12 +147,18 @@ _SILVER_ENVIRONMENT_COLUMNS = {
     "noise": "Noise level reading.",
     "pollution": "Pollution level reading.",
     "light": "Light level reading.",
-    "raining": "Rain intensity reading, valid range enforced to 0-100 -- rows outside this range are quarantined to silver_environment_rejected.",
+    "raining": (
+        "Rain intensity reading, valid range enforced to 0-100 -- rows outside this range "
+        "are quarantined to silver_environment_rejected."
+    ),
 }
 
 _SILVER_TELEGRAM_COLUMNS = {
     "message": "Free-text citizen report, whitespace-normalized from the raw Bronze value.",
-    "event_timestamp": "Real timestamp built by combining the raw date (DD/MM/YYYY) + hour (HH:mm:ss) strings -- the two originals are dropped once combined.",
+    "event_timestamp": (
+        "Real timestamp built by combining the raw date (DD/MM/YYYY) + hour (HH:mm:ss) "
+        "strings -- the two originals are dropped once combined."
+    ),
 }
 
 SILVER_COLUMN_COMMENTS = {
@@ -138,7 +169,11 @@ SILVER_COLUMN_COMMENTS = {
     "silver_traffic": {**_SILVER_TRAFFIC_COLUMNS, **_AUDIT_COLUMN_COMMENTS},
     "silver_traffic_rejected": {**_SILVER_TRAFFIC_COLUMNS, **_AUDIT_COLUMN_COMMENTS, **_REJECTION_REASON_COMMENT},
     "silver_environment": {**_SILVER_ENVIRONMENT_COLUMNS, **_AUDIT_COLUMN_COMMENTS},
-    "silver_environment_rejected": {**_SILVER_ENVIRONMENT_COLUMNS, **_AUDIT_COLUMN_COMMENTS, **_REJECTION_REASON_COMMENT},
+    "silver_environment_rejected": {
+        **_SILVER_ENVIRONMENT_COLUMNS,
+        **_AUDIT_COLUMN_COMMENTS,
+        **_REJECTION_REASON_COMMENT,
+    },
     "silver_telegram": {**_SILVER_TELEGRAM_COLUMNS, **_AUDIT_COLUMN_COMMENTS},
     "silver_telegram_rejected": {**_SILVER_TELEGRAM_COLUMNS, **_AUDIT_COLUMN_COMMENTS, **_REJECTION_REASON_COMMENT},
 }
