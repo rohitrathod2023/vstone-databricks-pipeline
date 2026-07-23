@@ -102,6 +102,32 @@ def get_source_schema(source_key: str):
     return SCHEMAS[lookup_key]
 
 
+def get_column_comments(source_key: str) -> Dict[str, str]:
+    """Column-level descriptions for source_key (see config/column_comments.py).
+    Resolves the same source_key indirection as get_source_schema() -- e.g.
+    bronze_streets has no comments of its own, it reuses raw_streets' via the
+    same source_key: raw_streets pointer. Returns {} (not a KeyError) for a
+    source with no comments defined yet, since this is discoverability
+    metadata, not something a pipeline run should fail over."""
+    from config.column_comments import COLUMN_COMMENTS
+
+    sources = _load_yaml(_SOURCES_FILE)
+    if source_key not in sources:
+        raise KeyError(f"No sources.yml entry for '{source_key}'. Known keys: {sorted(sources)}")
+
+    lookup_key = sources[source_key].get("source_key", source_key)
+    return COLUMN_COMMENTS.get(lookup_key, {})
+
+
+def get_silver_column_comments(source_key: str) -> Dict[str, str]:
+    """Column-level descriptions for a Silver table (see
+    config/column_comments.py's SILVER_COLUMN_COMMENTS). Direct lookup, no
+    indirection -- matches get_silver_schema()'s convention."""
+    from config.column_comments import SILVER_COLUMN_COMMENTS
+
+    return SILVER_COLUMN_COMMENTS.get(source_key, {})
+
+
 def get_silver_schema(source_key: str):
     """Return the strict, typed StructType for a Silver table.
 

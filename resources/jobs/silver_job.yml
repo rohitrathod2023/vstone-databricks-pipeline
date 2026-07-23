@@ -25,6 +25,15 @@ resources:
           pipeline_task:
             pipeline_id: ${resources.pipelines.silver_dlt_pipeline.id}
 
+        - task_key: silver_column_comments
+          depends_on:
+            - task_key: silver_dlt_pipeline
+          notebook_task:
+            notebook_path: ../../src/notebooks/12_silver_column_comments.py
+            base_parameters:
+              catalog: ${var.catalog}
+              env: ${bundle.target}
+
       email_notifications:
         on_failure:
           - ${var.notification_email}

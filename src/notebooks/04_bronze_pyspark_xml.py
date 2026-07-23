@@ -31,7 +31,7 @@ force = dbutils.widgets.get("force") == "true"
 
 # COMMAND ----------
 
-from utils.config_loader import get_source_config
+from utils.config_loader import get_column_comments, get_source_config
 from utils.logger import get_logger
 from utils.metadata import apply_table_comments
 from utils.sanity_checks import run_sanity_check
@@ -48,8 +48,8 @@ log.info(f"Loaded into {result['target_table']}: {result['row_count']} rows")
 
 # COMMAND ----------
 
-apply_table_comments(spark, cfg["target_table"], cfg["description"])
-log.info(f"Applied table comment to {cfg['target_table']}")
+apply_table_comments(spark, cfg["target_table"], cfg["description"], get_column_comments(source_key))
+log.info(f"Applied table + column comments to {cfg['target_table']}")
 
 # COMMAND ----------
 
