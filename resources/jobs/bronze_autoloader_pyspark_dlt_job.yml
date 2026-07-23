@@ -45,6 +45,15 @@ resources:
           pipeline_task:
             pipeline_id: ${resources.pipelines.bronze_dlt_pipeline.id}
 
+        - task_key: dlt_chunk2_csv_column_comments
+          depends_on:
+            - task_key: dlt_chunk2_csv
+          notebook_task:
+            notebook_path: ../../src/notebooks/11_bronze_dlt_column_comments.py
+            base_parameters:
+              catalog: ${var.catalog}
+              env: ${bundle.target}
+
       email_notifications:
         on_failure:
           - ${var.notification_email}
